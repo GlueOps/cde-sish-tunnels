@@ -1,0 +1,75 @@
+services:
+  # DNS01 Let's Encrypt Certificate Manager (Route53 + Certbot)
+  letsencrypt:
+    image: certbot/dns-route53:v3.1.0
+    container_name: letsencrypt-dns
+    restart: always
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - ./deploy-hook.sh:/deploy-hook.sh:ro
+      - ./ssl:/ssl
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # Initial certificate request (skip if already exists)
+        certbot certonly --dns-route53 \
+          --non-interactive --agree-tos \
+          --email ${ACME_EMAIL} \
+          -d ${DOMAIN} -d "*.${DOMAIN}" \
+          --deploy-hook /deploy-hook.sh \
+          --keep-until-expiring
+
+        # Renewal loop (check every 12 hours)
+        while true; do
+          sleep 12h
+          certbot renew --deploy-hook /deploy-hook.sh
+        done
+
+  # The SSH Server (upstream image, pinned by digest)
+  sish:
+    image: ghcr.io/antoniomika/sish:v2.23.0@sha256:c03329d1b8182ac8a928c1b928174dc2621619b824d0dcb11f045d02761bb327
+    container_name: sish
+    restart: always
+    ports:
+      - "2222:2222"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ssl:/ssl
+    command: >
+      --domain ${DOMAIN}
+      --http-address :80
+      --https-address :443
+      --ssh-address :2222
+      --https-certificate-directory=/ssl
+      --authentication=true
+      --https=true
+      --bind-random-subdomains=false
+      --authentication-key-request-url="http://authenticator:5000/"
+      --authentication-key-request-timeout=15s
+      --cleanup-unauthed-timeout=30s
+      --append-user-to-subdomain-separator="-"
+      --append-user-to-subdomain
+      --cleanup-unbound
+#      --debug
+    depends_on:
+      - authenticator
+      - letsencrypt
+
+  # The Auth App (Saves users to disk)
+  authenticator:
+    build: ./auth
+    container_name: sish-auth
+    restart: always
+    volumes:
+      # This folder will appear on your host machine containing the user files
+      - ./sish_users:/data
+    # Run with Gunicorn for stability
+    command: ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "auth:app"]
+
+volumes:
+  letsencrypt:
