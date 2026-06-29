@@ -92,6 +92,9 @@ The IAM credentials need: `route53:ListHostedZones`, `route53:GetChange`,
    # → https://<user>-myapp.ssh.example.com
    ```
 
+> Migrating a server from the old `glueops/sish` fork stack? See
+> [`MIGRATION.md`](./MIGRATION.md).
+
 ## Upgrading sish
 
 We pin the upstream image by digest in [`docker-compose.yml`](./docker-compose.yml).
