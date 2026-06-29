@@ -1,7 +1,7 @@
 services:
   # DNS01 Let's Encrypt Certificate Manager (Route53 + Certbot)
   letsencrypt:
-    image: certbot/dns-route53:v3.1.0
+    image: certbot/dns-route53:v3.1.0@sha256:106c888431ea9564e62d7faf58c76b432b97f190f4688b8a6e60549c54aeaddd
     container_name: letsencrypt-dns
     restart: always
     environment:
