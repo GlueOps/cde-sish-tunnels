@@ -1,0 +1,9 @@
+ssl/**
+sish_users/**
+!ssl/.keep
+!sish_users/.keep
+.env
+
+# Python
+__pycache__/
+*.pyc
