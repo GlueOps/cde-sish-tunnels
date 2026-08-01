@@ -64,6 +64,32 @@ sish watches that directory and reloads automatically. Renewal is checked every
 The IAM credentials need: `route53:ListHostedZones`, `route53:GetChange`,
 `route53:ChangeResourceRecordSets`.
 
+## Deployment roles: legacy central vs regional
+
+The same stack deploys both generations of tunnel server; the difference is
+`DOMAIN` plus one env var.
+
+| | Legacy central (one box) | Regional (one box per datacenter) |
+|---|---|---|
+| `DOMAIN` | `tunnels.glueopshosted.com` | `<region>.tunnels.cde.glueopshosted.com` |
+| `SISH_SUBDOMAIN_FLAGS` | unset (defaults to append-user) | `--force-requested-subdomains` |
+| VM bind → URL | binds `cde` → `cde-<hostname>.DOMAIN` | binds `<hostname>` → `<hostname>.DOMAIN` |
+| AWS creds | `acme-dns01-tunnels...` user (aws-dns-production) | `acme-dns01-cde...` user (CDE assets workspace) |
+
+Regional boxes sit behind a per-region CloudFront distribution: browsers hit
+`https://<hostname>.<region>.tunnels.cde.glueopshosted.com` via the CDN, which
+origin-fetches this box as `origin.<region>.tunnels.cde.glueopshosted.com` —
+covered by the same wildcard cert, no extra config here. The box's 443 stays
+directly reachable on purpose (CloudFront is an accelerator, not the security
+boundary). SSH (:2222) is always direct, never through the CDN.
+
+Naming mode is not cosmetic: the codespaces image and the slackbot both derive
+the bind/URL from the endpoint value (legacy endpoint → append-user naming,
+anything else → bare hostname), so a regional box MUST set
+`SISH_SUBDOMAIN_FLAGS=--force-requested-subdomains` or every access URL it
+serves will be wrong. The full region rollout runbook lives in
+GlueOps/slackbot-developer-workspaces#499.
+
 ## Quick start
 
 1. Configure environment:
