@@ -13,6 +13,8 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 
 def read_key(user_file):
+    """Stored key, or None if the username is unregistered. Any other OSError
+    (weird path, unreadable file) propagates — callers must deny, not 500."""
     try:
         return user_file.read_text().strip()
     except FileNotFoundError:
@@ -30,8 +32,17 @@ def auth():
     remote = data.get("remote_addr")
     remote = remote if isinstance(remote, str) else "?"
 
-    if not isinstance(username, str) or not isinstance(key, str) or not username or not key:
+    if not isinstance(username, str) or not isinstance(key, str):
         return "Missing data", 403
+    key = key.strip()
+    if not username or not key:
+        return "Missing data", 403
+
+    # sish usernames are hostnames (63-char DNS label cap) but arrive as
+    # attacker-chosen SSH usernames; without this cap an oversized name
+    # reaches the filesystem and ENAMETOOLONG turns every retry into a 500.
+    if len(username) > 63:
+        return "Forbidden", 403
 
     # Reject any name the sanitizer would have to touch: distinct raw
     # usernames must never collapse onto one key file ("vm a" vs "vm_a"
@@ -44,7 +55,11 @@ def auth():
 
     user_file = DATA_DIR / username
 
-    stored_key = read_key(user_file)
+    try:
+        stored_key = read_key(user_file)
+    except OSError:
+        print(f"auth: {username} denied (stored key unreadable) from {remote}")
+        return "Forbidden", 403
     if stored_key is not None:
         if stored_key == key:
             print(f"auth: {username} allowed from {remote}")
@@ -66,7 +81,11 @@ def auth():
     except FileExistsError:
         # Lost the race. If the winner stored the same key (same VM
         # connecting twice at boot), it's still an allow.
-        if read_key(user_file) == key:
+        try:
+            winner = read_key(user_file)
+        except OSError:
+            winner = None
+        if winner == key:
             print(f"auth: {username} allowed from {remote}")
             return "OK", 200
         print(f"auth: {username} denied (race) from {remote}")

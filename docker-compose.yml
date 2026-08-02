@@ -40,6 +40,12 @@ services:
       - "443:443"
     volumes:
       - ./ssl:/ssl
+    # /empty-pubkeys: sish accepts any key found in its authentication-keys
+    # directory WITHOUT consulting the auth webhook. The image's default dir
+    # ships (effectively) empty, but pointing the flag at a tmpfs makes the
+    # bypass impossible by construction — never mount keys into this stack.
+    tmpfs:
+      - /empty-pubkeys
     command: >
       --domain ${DOMAIN}
       --http-address :80
@@ -47,10 +53,11 @@ services:
       --ssh-address :2222
       --https-certificate-directory=/ssl
       --authentication=true
+      --authentication-keys-directory=/empty-pubkeys
       --https=true
       --bind-random-subdomains=false
       --authentication-key-request-url="http://authenticator:5000/"
-      --authentication-key-request-timeout=15s
+      --authentication-key-request-timeout=3s
       --cleanup-unauthed-timeout=30s
       --force-requested-subdomains
       --cleanup-unbound
