@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.3.0...v0.4.0) (2026-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* regional-only deployment — drop legacy append-user support ([#33](https://github.com/GlueOps/cde-sish-tunnels/issues/33))
+
+### Features
+
+* regional-only deployment — drop legacy append-user support ([#33](https://github.com/GlueOps/cde-sish-tunnels/issues/33)) ([88f4713](https://github.com/GlueOps/cde-sish-tunnels/commit/88f47132c44bac0617c3f8efebd6f454e65d2e21))
+
+
+### Miscellaneous Chores
+
+* add Apache-2.0 LICENSE ([#31](https://github.com/GlueOps/cde-sish-tunnels/issues/31)) ([8a8d673](https://github.com/GlueOps/cde-sish-tunnels/commit/8a8d6736ac03f421e9f0fa7c93666f318e82437d))
+
 ## [0.3.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.2.1...v0.3.0) (2026-06-30)
 
 
