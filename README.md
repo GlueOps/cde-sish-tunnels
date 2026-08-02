@@ -64,31 +64,31 @@ sish watches that directory and reloads automatically. Renewal is checked every
 The IAM credentials need: `route53:ListHostedZones`, `route53:GetChange`,
 `route53:ChangeResourceRecordSets`.
 
-## Deployment roles: legacy central vs regional
+## Deployment model: one box per datacenter region
 
-The same stack deploys both generations of tunnel server; the difference is
-`DOMAIN` plus one env var.
+This repo deploys **regional** tunnel servers only: one instance per
+datacenter, each serving `DOMAIN=<region>.tunnels.cde.glueopshosted.com`.
+Subdomains are bound literally (`--force-requested-subdomains`): a codespace
+VM binds its own hostname, so URLs are
+`https://<hostname>.<region>.tunnels.cde.glueopshosted.com` with no prefix,
+and a taken name fails the bind rather than silently going random. AWS creds
+come from the `acme-dns01-cde.glueopshosted.com` IAM user (the `cde_acme_*`
+outputs of the CDE assets workspace).
 
-| | Legacy central (one box) | Regional (one box per datacenter) |
-|---|---|---|
-| `DOMAIN` | `tunnels.glueopshosted.com` | `<region>.tunnels.cde.glueopshosted.com` |
-| `SISH_SUBDOMAIN_FLAGS` | unset (defaults to append-user) | `--force-requested-subdomains` |
-| VM bind → URL | binds `cde` → `cde-<hostname>.DOMAIN` | binds `<hostname>` → `<hostname>.DOMAIN` |
-| AWS creds | `acme-dns01-tunnels...` user (aws-dns-production) | `acme-dns01-cde...` user (CDE assets workspace) |
+> [!WARNING]
+> The legacy central box (`tunnels.glueopshosted.com`) is NOT deployed from
+> this version. It depends on the append-user naming this repo no longer
+> carries (`--append-user-to-subdomain`, removed in 0.4): keep that box pinned
+> to its current checkout and never pull repo tip onto it. It serves existing
+> VMs until they drain, then retires.
 
 Regional boxes sit behind a per-region CloudFront distribution: browsers hit
 `https://<hostname>.<region>.tunnels.cde.glueopshosted.com` via the CDN, which
 origin-fetches this box as `origin.<region>.tunnels.cde.glueopshosted.com` —
 covered by the same wildcard cert, no extra config here. The box's 443 stays
 directly reachable on purpose (CloudFront is an accelerator, not the security
-boundary). SSH (:2222) is always direct, never through the CDN.
-
-Naming mode is not cosmetic: the codespaces image and the slackbot both derive
-the bind/URL from the endpoint value (legacy endpoint → append-user naming,
-anything else → bare hostname), so a regional box MUST set
-`SISH_SUBDOMAIN_FLAGS=--force-requested-subdomains` or every access URL it
-serves will be wrong. The full region rollout runbook lives in
-GlueOps/slackbot-developer-workspaces#499.
+boundary). SSH (:2222) is always direct, never through the CDN. The full
+region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
 
 ## Quick start
 
@@ -99,27 +99,27 @@ GlueOps/slackbot-developer-workspaces#499.
    ```
 
    ```
-   DOMAIN=ssh.example.com
+   DOMAIN=uswest1.tunnels.cde.glueopshosted.com
    ACME_EMAIL=admin@example.com
    AWS_ACCESS_KEY_ID=your_access_key_id
    AWS_SECRET_ACCESS_KEY=your_secret_access_key
    ```
 
-2. Start the stack:
+2. Start the stack (the `cde.glueopshosted.com` NS delegation must be live
+   for certbot's DNS-01 validation to succeed):
 
    ```bash
    docker compose up -d
    ```
 
-3. Create a tunnel from a developer machine:
+3. Smoke-test the tunnel and naming mode from any machine:
 
    ```bash
-   ssh -p 2222 -R myapp:80:localhost:3000 ssh.example.com
-   # → https://<user>-myapp.ssh.example.com
+   ssh -p 2222 -R smoketest:80:localhost:3000 uswest1.tunnels.cde.glueopshosted.com
+   # → https://smoketest.uswest1.tunnels.cde.glueopshosted.com
+   # (no <user>- prefix in the URL sish prints — if there is one, the wrong
+   #  stack version is deployed)
    ```
-
-> Migrating a server from the old `glueops/sish` fork stack? See
-> [`MIGRATION.md`](./MIGRATION.md).
 
 ## Upgrading sish
 

@@ -52,7 +52,7 @@ services:
       --authentication-key-request-url="http://authenticator:5000/"
       --authentication-key-request-timeout=15s
       --cleanup-unauthed-timeout=30s
-      ${SISH_SUBDOMAIN_FLAGS:---append-user-to-subdomain-separator=- --append-user-to-subdomain}
+      --force-requested-subdomains
       --cleanup-unbound
 #      --debug
     depends_on:
