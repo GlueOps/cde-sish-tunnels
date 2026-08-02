@@ -64,6 +64,42 @@ sish watches that directory and reloads automatically. Renewal is checked every
 The IAM credentials need: `route53:ListHostedZones`, `route53:GetChange`,
 `route53:ChangeResourceRecordSets`.
 
+## Deployment model: one box per datacenter region
+
+This repo deploys **regional** tunnel servers only: one instance per
+datacenter, each serving `DOMAIN=<region>.tunnels.cde.glueopshosted.com`.
+Subdomains are bound literally (`--force-requested-subdomains`): a codespace
+VM binds its own hostname, so URLs are
+`https://<hostname>.<region>.tunnels.cde.glueopshosted.com` with no prefix,
+and a taken name fails the bind rather than silently going random. AWS creds
+come from the `acme-dns01-cde.glueopshosted.com` IAM user (the `cde_acme_*`
+outputs of the CDE assets workspace).
+
+### Restricting who can create tunnels
+
+`TUNNEL_ALLOWED_CIDRS` (comma-separated CIDRs, default: all RFC 1918 private
+ranges plus `100.64.0.0/10` — the CGNAT range Tailscale uses) is enforced by
+the **authenticator** on every SSH auth attempt using the client address sish
+reports — so it restricts tunnel creation only. Browsers and CloudFront
+(:80/:443) never touch the authenticator and are unaffected. Outside-the-list
+clients get a logged 403 (`denied (source ... not allowlisted)`) and can
+never register or connect a tunnel. Empty value disables the restriction; a
+malformed CIDR fails the authenticator at startup.
+
+Deliberately NOT used: sish's own `--whitelisted-ips`, which is global across
+SSH *and* HTTP/S and would block public browsers. The :2222 publish is
+IPv4-only because docker-proxy rewrites IPv6 clients' sources to the bridge
+gateway (a 172.x address inside the allowlist) — an unqualified publish would
+let external IPv6 clients through the check.
+
+Regional boxes sit behind a per-region CloudFront distribution: browsers hit
+`https://<hostname>.<region>.tunnels.cde.glueopshosted.com` via the CDN, which
+origin-fetches this box as `origin.<region>.tunnels.cde.glueopshosted.com` —
+covered by the same wildcard cert, no extra config here. The box's 443 stays
+directly reachable on purpose (CloudFront is an accelerator, not the security
+boundary). SSH (:2222) is always direct, never through the CDN. The full
+region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
+
 ## Quick start
 
 1. Configure environment:
@@ -73,27 +109,27 @@ The IAM credentials need: `route53:ListHostedZones`, `route53:GetChange`,
    ```
 
    ```
-   DOMAIN=ssh.example.com
+   DOMAIN=uswest1.tunnels.cde.glueopshosted.com
    ACME_EMAIL=admin@example.com
    AWS_ACCESS_KEY_ID=your_access_key_id
    AWS_SECRET_ACCESS_KEY=your_secret_access_key
    ```
 
-2. Start the stack:
+2. Start the stack (the `cde.glueopshosted.com` NS delegation must be live
+   for certbot's DNS-01 validation to succeed):
 
    ```bash
    docker compose up -d
    ```
 
-3. Create a tunnel from a developer machine:
+3. Smoke-test the tunnel and naming mode from any machine:
 
    ```bash
-   ssh -p 2222 -R myapp:80:localhost:3000 ssh.example.com
-   # → https://<user>-myapp.ssh.example.com
+   ssh -p 2222 -R smoketest:80:localhost:3000 uswest1.tunnels.cde.glueopshosted.com
+   # → https://smoketest.uswest1.tunnels.cde.glueopshosted.com
+   # (no <user>- prefix in the URL sish prints — if there is one, the wrong
+   #  stack version is deployed)
    ```
-
-> Migrating a server from the old `glueops/sish` fork stack? See
-> [`MIGRATION.md`](./MIGRATION.md).
 
 ## Upgrading sish
 

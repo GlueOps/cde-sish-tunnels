@@ -35,11 +35,23 @@ services:
     container_name: sish
     restart: always
     ports:
-      - "2222:2222"
+      # :2222 is IPv4-only ON PURPOSE: an unqualified publish also binds
+      # [::], and IPv6 connections reach the IPv4-only compose network via
+      # docker-proxy, which rewrites their source to the bridge gateway
+      # (172.x) — laundering external clients INSIDE the private-range
+      # tunnel allowlist. Tunnel DNS is A-record-only, so nothing
+      # legitimate connects over v6.
+      - "0.0.0.0:2222:2222"
       - "80:80"
       - "443:443"
     volumes:
       - ./ssl:/ssl
+    # /empty-pubkeys: sish accepts any key found in its authentication-keys
+    # directory WITHOUT consulting the auth webhook. The image's default dir
+    # ships (effectively) empty, but pointing the flag at a tmpfs makes the
+    # bypass impossible by construction — never mount keys into this stack.
+    tmpfs:
+      - /empty-pubkeys
     command: >
       --domain ${DOMAIN}
       --http-address :80
@@ -47,13 +59,13 @@ services:
       --ssh-address :2222
       --https-certificate-directory=/ssl
       --authentication=true
+      --authentication-keys-directory=/empty-pubkeys
       --https=true
       --bind-random-subdomains=false
       --authentication-key-request-url="http://authenticator:5000/"
-      --authentication-key-request-timeout=15s
+      --authentication-key-request-timeout=3s
       --cleanup-unauthed-timeout=30s
-      --append-user-to-subdomain-separator="-"
-      --append-user-to-subdomain
+      --force-requested-subdomains
       --cleanup-unbound
 #      --debug
     depends_on:
@@ -65,6 +77,13 @@ services:
     build: ./auth
     container_name: sish-auth
     restart: always
+    environment:
+      # Source-IP allowlist for TUNNEL CREATION only (SSH auth): sish passes
+      # each SSH client's address here, and connections outside these CIDRs
+      # are denied. HTTP/HTTPS (browsers, CloudFront) never touch this
+      # service and are unaffected. Default: all RFC 1918 private ranges
+      # plus 100.64.0.0/10 (CGNAT, used by Tailscale).
+      - TUNNEL_ALLOWED_CIDRS=${TUNNEL_ALLOWED_CIDRS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10}
     volumes:
       # This folder will appear on your host machine containing the user files
       - ./sish_users:/data
