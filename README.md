@@ -87,7 +87,10 @@ never register or connect a tunnel. Empty value disables the restriction; a
 malformed CIDR fails the authenticator at startup.
 
 Deliberately NOT used: sish's own `--whitelisted-ips`, which is global across
-SSH *and* HTTP/S and would block public browsers.
+SSH *and* HTTP/S and would block public browsers. The :2222 publish is
+IPv4-only because docker-proxy rewrites IPv6 clients' sources to the bridge
+gateway (a 172.x address inside the allowlist) — an unqualified publish would
+let external IPv6 clients through the check.
 
 Regional boxes sit behind a per-region CloudFront distribution: browsers hit
 `https://<hostname>.<region>.tunnels.cde.glueopshosted.com` via the CDN, which

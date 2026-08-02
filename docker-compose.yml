@@ -35,7 +35,13 @@ services:
     container_name: sish
     restart: always
     ports:
-      - "2222:2222"
+      # :2222 is IPv4-only ON PURPOSE: an unqualified publish also binds
+      # [::], and IPv6 connections reach the IPv4-only compose network via
+      # docker-proxy, which rewrites their source to the bridge gateway
+      # (172.x) — laundering external clients INSIDE the private-range
+      # tunnel allowlist. Tunnel DNS is A-record-only, so nothing
+      # legitimate connects over v6.
+      - "0.0.0.0:2222:2222"
       - "80:80"
       - "443:443"
     volumes:
