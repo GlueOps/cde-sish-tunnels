@@ -75,13 +75,6 @@ and a taken name fails the bind rather than silently going random. AWS creds
 come from the `acme-dns01-cde.glueopshosted.com` IAM user (the `cde_acme_*`
 outputs of the CDE assets workspace).
 
-> [!WARNING]
-> The legacy central box (`tunnels.glueopshosted.com`) is NOT deployed from
-> this version. It depends on the append-user naming this repo no longer
-> carries (`--append-user-to-subdomain`, removed in 0.4): keep that box pinned
-> to its current checkout and never pull repo tip onto it. It serves existing
-> VMs until they drain, then retires.
-
 Regional boxes sit behind a per-region CloudFront distribution: browsers hit
 `https://<hostname>.<region>.tunnels.cde.glueopshosted.com` via the CDN, which
 origin-fetches this box as `origin.<region>.tunnels.cde.glueopshosted.com` —
