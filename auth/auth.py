@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import sys
 import tempfile
@@ -8,6 +9,26 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 DATA_DIR = Path("/data")
+
+# Source-IP allowlist for tunnel creation: sish reports each SSH client's
+# address in the auth payload, so enforcing here scopes the restriction to
+# SSH only — HTTP(S) never touches this service. Empty/unset = allow all.
+# Parsed at import so a malformed CIDR crashes the worker at startup
+# (visible) instead of silently allowing at request time.
+ALLOWED_NETWORKS = [
+    ipaddress.ip_network(cidr.strip())
+    for cidr in os.environ.get("TUNNEL_ALLOWED_CIDRS", "").split(",")
+    if cidr.strip()
+] or None
+
+
+def source_ip(remote_addr):
+    """IP from sish's remote_addr ("1.2.3.4:56789", "[::1]:2222"), else None."""
+    host = remote_addr.rsplit(":", 1)[0].strip("[]")
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        return None
 
 
 def audit(message):
@@ -44,6 +65,14 @@ def auth():
     key = key.strip()
     if not username or not key:
         return "Missing data", 403
+
+    # Tunnel-creation allowlist: an unparseable source (including a caller
+    # that sent no remote_addr) fails closed while the list is active.
+    if ALLOWED_NETWORKS is not None:
+        ip = source_ip(remote)
+        if ip is None or not any(ip in net for net in ALLOWED_NETWORKS):
+            audit(f"auth: {username!r} denied (source {remote} not allowlisted)")
+            return "Forbidden", 403
 
     # sish usernames are hostnames (63-char DNS label cap) but arrive as
     # attacker-chosen SSH usernames; without this cap an oversized name

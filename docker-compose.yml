@@ -71,6 +71,12 @@ services:
     build: ./auth
     container_name: sish-auth
     restart: always
+    environment:
+      # Source-IP allowlist for TUNNEL CREATION only (SSH auth): sish passes
+      # each SSH client's address here, and connections outside these CIDRs
+      # are denied. HTTP/HTTPS (browsers, CloudFront) never touch this
+      # service and are unaffected. Default: all RFC 1918 private ranges.
+      - TUNNEL_ALLOWED_CIDRS=${TUNNEL_ALLOWED_CIDRS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     volumes:
       # This folder will appear on your host machine containing the user files
       - ./sish_users:/data

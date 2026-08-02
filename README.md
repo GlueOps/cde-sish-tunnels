@@ -75,6 +75,24 @@ and a taken name fails the bind rather than silently going random. AWS creds
 come from the `acme-dns01-cde.glueopshosted.com` IAM user (the `cde_acme_*`
 outputs of the CDE assets workspace).
 
+### Restricting who can create tunnels
+
+`TUNNEL_ALLOWED_CIDRS` (comma-separated CIDRs, default: all RFC 1918 private
+ranges) is enforced by the **authenticator** on every SSH auth attempt using
+the client address sish reports — so it restricts tunnel creation only.
+Browsers and CloudFront (:80/:443) never touch the authenticator and are
+unaffected. Outside-the-list clients get a logged 403
+(`denied (source ... not allowlisted)`) and can never register or connect a
+tunnel. Empty value disables the restriction; a malformed CIDR fails the
+authenticator at startup. Tailscale-sourced VMs need `100.64.0.0/10` (CGNAT,
+not part of RFC 1918) added.
+
+Deliberately NOT used: sish's own `--whitelisted-ips`, which is global across
+SSH *and* HTTP/S and would block public browsers. For packet-level dropping
+(before the SSH handshake), add host-firewall rules on :2222 in the
+`DOCKER-USER` iptables chain (published ports bypass normal INPUT rules) —
+that composes fine with this setting.
+
 Regional boxes sit behind a per-region CloudFront distribution: browsers hit
 `https://<hostname>.<region>.tunnels.cde.glueopshosted.com` via the CDN, which
 origin-fetches this box as `origin.<region>.tunnels.cde.glueopshosted.com` —
