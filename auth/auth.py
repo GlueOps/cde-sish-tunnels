@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -7,6 +8,12 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 DATA_DIR = Path("/data")
+
+
+def audit(message):
+    # One write syscall per line: with 4 workers sharing stdout, print()'s
+    # separate message+newline writes can interleave mid-line.
+    sys.stdout.write(message + "\n")
 
 # sish auth payloads are tiny; anything bigger is not sish.
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
@@ -50,7 +57,7 @@ def auth():
     # and always pass unchanged; !r keeps the rejected raw value from
     # injecting into the log line.
     if secure_filename(username) != username:
-        print(f"auth: {username!r} denied (unsafe username) from {remote}")
+        audit(f"auth: {username!r} denied (unsafe username) from {remote}")
         return "Forbidden", 403
 
     user_file = DATA_DIR / username
@@ -58,13 +65,13 @@ def auth():
     try:
         stored_key = read_key(user_file)
     except OSError:
-        print(f"auth: {username} denied (stored key unreadable) from {remote}")
+        audit(f"auth: {username} denied (stored key unreadable) from {remote}")
         return "Forbidden", 403
     if stored_key is not None:
         if stored_key == key:
-            print(f"auth: {username} allowed from {remote}")
+            audit(f"auth: {username} allowed from {remote}")
             return "OK", 200
-        print(f"auth: {username} denied (key mismatch) from {remote}")
+        audit(f"auth: {username} denied (key mismatch) from {remote}")
         return "Forbidden", 403
 
     # First-use registration, atomically: write the key to a temp file and
@@ -86,14 +93,18 @@ def auth():
         except OSError:
             winner = None
         if winner == key:
-            print(f"auth: {username} allowed from {remote}")
+            audit(f"auth: {username} allowed from {remote}")
             return "OK", 200
-        print(f"auth: {username} denied (race) from {remote}")
+        # winner None means the existing path couldn't be read (e.g. a
+        # dangling symlink someone left in sish_users/) — that's an operator
+        # problem, not a registration race; don't mislabel it in the audit.
+        reason = "race" if winner is not None else "stored key unreadable"
+        audit(f"auth: {username} denied ({reason}) from {remote}")
         return "Forbidden", 403
     finally:
         os.unlink(tmp_path)
 
-    print(f"auth: {username} registered from {remote}")
+    audit(f"auth: {username} registered from {remote}")
     return "OK", 200
 
 
