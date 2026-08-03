@@ -72,8 +72,8 @@ Subdomains are bound literally (`--force-requested-subdomains`): a codespace
 VM binds its own hostname, so URLs are
 `https://<hostname>.<region>.tunnels.cde.glueopshosted.com` with no prefix,
 and a taken name fails the bind rather than silently going random. AWS creds
-come from the `acme-dns01-cde.glueopshosted.com` IAM user (the `cde_acme_*`
-outputs of the CDE assets workspace).
+are access keys for the `acme-dns01-cde.glueopshosted.com` IAM user, which is
+scoped to exactly the regional `_acme-challenge` record names.
 
 ### Restricting who can create tunnels
 
@@ -115,8 +115,7 @@ region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
    AWS_SECRET_ACCESS_KEY=your_secret_access_key
    ```
 
-2. Start the stack (the `cde.glueopshosted.com` NS delegation must be live
-   for certbot's DNS-01 validation to succeed):
+2. Start the stack:
 
    ```bash
    docker compose up -d
