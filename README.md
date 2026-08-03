@@ -108,12 +108,8 @@ region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
    cp .env.example .env
    ```
 
-   ```
-   DOMAIN=uswest1.tunnels.cde.glueopshosted.com
-   ACME_EMAIL=admin@example.com
-   AWS_ACCESS_KEY_ID=your_access_key_id
-   AWS_SECRET_ACCESS_KEY=your_secret_access_key
-   ```
+   Edit `.env` and set every value for this deployment — the comments in
+   [`.env.example`](./.env.example) explain each one.
 
 2. Start the stack:
 
@@ -124,8 +120,8 @@ region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
 3. Smoke-test the tunnel and naming mode from any machine:
 
    ```bash
-   ssh -p 2222 -R smoketest:80:localhost:3000 uswest1.tunnels.cde.glueopshosted.com
-   # → https://smoketest.uswest1.tunnels.cde.glueopshosted.com
+   ssh -p 2222 -R smoketest:80:localhost:3000 usfoobar1.tunnels.cde.glueopshosted.com
+   # → https://smoketest.usfoobar1.tunnels.cde.glueopshosted.com
    # (no <user>- prefix in the URL sish prints — if there is one, the wrong
    #  stack version is deployed)
    ```
