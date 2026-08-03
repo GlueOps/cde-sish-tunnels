@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.4.0...v0.4.1) (2026-08-03)
+
+
+### Documentation
+
+* generic ACME credential guidance; drop stale delegation note ([#34](https://github.com/GlueOps/cde-sish-tunnels/issues/34)) ([23c6135](https://github.com/GlueOps/cde-sish-tunnels/commit/23c613507638f9ecd4822a6057df716da71b2b4b))
+
 ## [0.4.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.3.0...v0.4.0) (2026-08-02)
 
 
