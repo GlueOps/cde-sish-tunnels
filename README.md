@@ -5,7 +5,7 @@ Cloud Development Environment (CDE) tunnels. sish exposes HTTP(S)/WS(S)/TCP
 tunnels to a developer's localhost over plain SSH remote port forwarding — no
 client agent required.
 
-Version: 0.4.1 <!-- x-release-please-version -->
+Version: 0.4.2 <!-- x-release-please-version -->
 
 ## What this is (and isn't)
 

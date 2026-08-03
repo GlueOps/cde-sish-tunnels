@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.4.1...v0.4.2) (2026-08-03)
+
+
+### Documentation
+
+* obviously-fake example region; README defers env details to .env.example ([#36](https://github.com/GlueOps/cde-sish-tunnels/issues/36)) ([0df5eda](https://github.com/GlueOps/cde-sish-tunnels/commit/0df5eda8acdfd387be98bdf1f965d650c6a506df))
+
 ## [0.4.1](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.4.0...v0.4.1) (2026-08-03)
 
 
