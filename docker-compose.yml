@@ -31,7 +31,7 @@ services:
 
   # The SSH Server (upstream image, pinned by digest)
   sish:
-    image: ghcr.io/antoniomika/sish:v2.23.0@sha256:c03329d1b8182ac8a928c1b928174dc2621619b824d0dcb11f045d02761bb327
+    image: ghcr.io/antoniomika/sish:v3.0.4@sha256:6f61b75442a771554e5e1e53595229120c8e6b69ade55a298ef5b3d243d2b72c
     container_name: sish
     restart: always
     ports:
