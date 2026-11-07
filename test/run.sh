@@ -20,7 +20,7 @@ cleanup() {
     echo "--- failed; recent logs ---"
     compose logs --tail=40 nginx oauth2-proxy sish authenticator tunnel || true
   fi
-  compose down -v --remove-orphans >/dev/null 2>&1 || true
+  compose down -v --rmi local --remove-orphans >/dev/null 2>&1 || true
   exit "$status"
 }
 trap cleanup EXIT
@@ -33,10 +33,8 @@ compose run --rm tester python -I /test_sso.py
 
 echo "sso-test: checking nginx picks up a renewed certificate"
 before=$(compose run --rm tester python -I /test_sso.py fingerprint)
-# shellcheck disable=SC2016  # $0 expands inside the container
-compose exec -T letsencrypt sh -c 'openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-  -subj "/CN=$0" -addext "subjectAltName=DNS:$0,DNS:*.$0" \
-  -keyout "/ssl/$0.key" -out "/ssl/$0.crt" 2>/dev/null' "$(grep '^DOMAIN=' test/test.env | cut -d= -f2)"
+# The test letsencrypt service issues a fresh self-signed cert on every start.
+compose restart letsencrypt
 for _ in $(seq 15); do
   sleep 2
   after=$(compose run --rm tester python -I /test_sso.py fingerprint)

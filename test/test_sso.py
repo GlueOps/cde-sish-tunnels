@@ -27,8 +27,8 @@ def session():
     return s
 
 
-def login(email, verified=True, target=APP):
-    s = session()
+def login(email, verified=True, target=APP, s=None):
+    s = s or session()
     r = s.get(target)
     assert urlparse(r.url).hostname == "idp", f"expected IdP login page, got {r.url}"
     claims = json.dumps({"email": email, "email_verified": verified})
@@ -60,28 +60,41 @@ def check(name, ok, detail=""):
 
 
 def ssh_local_forward_blocked():
-    """A tunnel user must not reach sish's or oauth2-proxy's HTTP ports via ssh -L."""
+    """A tunnel user must not reach sish's or oauth2-proxy's HTTP ports via ssh -L.
+    One ssh session per target, since sish may drop a session after refusing a
+    forward. Returns what got through or couldn't be tested."""
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", "/tmp/id"], check=True)
-    proc = subprocess.Popen(
-        ["ssh", "-N", "-i", "/tmp/id", "-p", "2222", "-o", "StrictHostKeyChecking=no",
-         "-L", "9000:sish:80", "-L", "9001:oauth2-proxy:4180", "-L", "9002:localhost:80",
-         "vm2@sish"],
-        stderr=subprocess.DEVNULL)
-    try:
-        time.sleep(3)
-        if proc.poll() is not None:
-            return ["ssh session never came up, so the check proved nothing"]
-        reached = []
-        for port, host in [(9000, f"app1.{D}"), (9001, f"app1.{D}"), (9002, f"app1.{D}")]:
-            try:
-                r = requests.get(f"http://127.0.0.1:{port}/oauth2/ping" if port == 9001 else
-                                 f"http://127.0.0.1:{port}/", headers={"Host": host}, timeout=3)
-                reached.append(f"{port}->{r.status_code}")
-            except requests.RequestException:
-                pass
-        return reached
-    finally:
-        proc.terminate()
+    problems = []
+    for port, target in [(9000, "sish:80"), (9001, "oauth2-proxy:4180"), (9002, "localhost:80")]:
+        proc = subprocess.Popen(["ssh", "-N", "-i", "/tmp/id", "-p", "2222", "-o", "StrictHostKeyChecking=no",
+                                 "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+                                 "-L", f"{port}:{target}", "vm2@sish"])
+        try:
+            deadline = time.time() + 15
+            while True:
+                try:
+                    sock = socket.create_connection(("127.0.0.1", port), timeout=3)
+                    break
+                except ConnectionRefusedError:
+                    if time.time() > deadline or proc.poll() is not None:
+                        sock = None
+                        break
+                    time.sleep(0.2)
+            if sock is None:
+                problems.append(f"{target}: ssh -L listener never came up, untested")
+                continue
+            with sock:
+                try:
+                    sock.sendall(f"GET / HTTP/1.1\r\nHost: app1.{D}\r\nConnection: close\r\n\r\n".encode())
+                    reply = sock.recv(64)
+                except OSError:
+                    reply = b""
+            if reply:
+                problems.append(f"{target} answered {reply[:20]!r}")
+        finally:
+            proc.terminate()
+            proc.wait()
+    return problems
 
 
 def main():
@@ -93,10 +106,11 @@ def main():
           f"{r.status_code} {r.url}")
     check("app receives X-Forwarded-Email", "X-Forwarded-Email: alice@example.com" in r.text)
 
-    session_cookie = next(c for c in s.cookies if c.name == "_oauth2_proxy")
-    left = session_cookie.expires - time.time()
+    session_cookie = next((c for c in s.cookies if c.name == "_oauth2_proxy"), None)
+    left = (session_cookie.expires or 0) - time.time() if session_cookie else 0
     check("session cookie expires in 12h", 12 * 3600 - 300 < left <= 12 * 3600 + 60, f"{left:.0f}s")
-    check("session cookie scoped to all tunnels", session_cookie.domain == f".{D}", session_cookie.domain)
+    check("session cookie scoped to all tunnels", bool(session_cookie) and session_cookie.domain == f".{D}",
+          getattr(session_cookie, "domain", "missing"))
 
     s.cookies.set("appcookie", "keepme", domain=f"app1.{D}")
     r = s.get(APP, headers={"X-Forwarded-Email": "ceo@example.com",
@@ -107,6 +121,28 @@ def main():
           repr(cookie_line))
     check("client-sent identity headers dropped",
           "ceo@example.com" not in r.text and "admins" not in r.text)
+
+    # Expired-session tab storm: several sign-in starts leave CSRF cookies;
+    # the session must still be stripped after login.
+    s4 = session()
+    for _ in range(6):
+        s4.get(APP, allow_redirects=False)
+    csrf = [c.name for c in s4.cookies if c.name.endswith("_csrf")]
+    check("pending CSRF cookies capped at 3", len(csrf) <= 3, str(len(csrf)))
+    _, r = login("alice@example.com", s=s4)
+    cookie_line = next((l for l in r.text.splitlines() if l.startswith("Cookie:")), "")
+    check("session stripped despite pending CSRF cookies", r.status_code == 200 and "_oauth2_proxy" not in r.text,
+          f"{r.status_code} {cookie_line!r}")
+
+    # A tunnel app planting junk _oauth2_proxy* cookies (longer path, so sent
+    # first) to push the real session past the strip passes: refused outright.
+    for i in range(5):
+        s.cookies.set(f"_oauth2_proxy_x{i}", "junk", domain=f".{D}", path="/a")
+    r = s.get(APP + "a/", allow_redirects=False)
+    check("planted oauth2-proxy cookies refused, never forwarded", r.status_code == 400 and ECHO not in r.text,
+          str(r.status_code))
+    for i in range(5):
+        s.cookies.clear(f".{D}", "/a", f"_oauth2_proxy_x{i}")
 
     ws = s.get(APP, headers=WS, stream=True, allow_redirects=False)
     check("websocket upgrade works when signed in", ws.status_code == 101, str(ws.status_code))
@@ -142,9 +178,13 @@ def main():
 
     s3 = session()
     r = s3.get(f"https://{D}/oauth2/start?rd=https://evil.example/")
-    r = s3.post(r.url, data={"username": "alice@example.com",
-                             "claims": json.dumps({"email": "alice@example.com", "email_verified": True})})
-    hosts = [urlparse(h.headers.get("Location", "")).hostname for h in r.history] + [urlparse(r.url).hostname]
+    try:
+        r = s3.post(r.url, data={"username": "alice@example.com",
+                                 "claims": json.dumps({"email": "alice@example.com", "email_verified": True})})
+        hosts = [urlparse(h.headers.get("Location", "")).hostname for h in r.history] + [urlparse(r.url).hostname]
+    except requests.ConnectionError as e:
+        # evil.example doesn't resolve here, so following it surfaces as this
+        hosts = [urlparse(e.request.url).hostname]
     check("rd to an outside domain is never followed", "evil.example" not in hosts, str(hosts))
 
     r = s.get(APP + "oauth2/sign_out", allow_redirects=False)

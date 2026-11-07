@@ -32,7 +32,9 @@ map $request_uri $o2p_rd {
 }
 
 # Strip oauth2-proxy cookies (session, csrf) so tunnel apps never see
-# visitors' sessions. One cookie per pass; the last map trims a leading "; ".
+# visitors' sessions. One cookie per pass, so 4 passes cover the session plus
+# the 3 csrf cookies OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST_LIMIT=2 allows; the
+# last map trims a leading "; ".
 map $http_cookie $cookie_p1 {
     "~^(?<a>.*?)(?:^|;\s*)_oauth2_proxy[^=]*=[^;]*(?<b>.*)$" "$a$b";
     default $http_cookie;
@@ -51,6 +53,12 @@ map $cookie_p3 $cookie_p4 {
 }
 map $cookie_p4 $cookie_clean {
     "~^[;\s]*(?<r>.*)$" $r;
+}
+# Anything left over (e.g. junk _oauth2_proxy* cookies a tunnel app planted to
+# push the real session past the 4 passes) is refused, never forwarded.
+map $cookie_clean $cookie_leftover {
+    "~(?:^|;\s*)_oauth2_proxy" 1;
+    default                     0;
 }
 
 # Hosts that must never reach a tunnel: the apex hosts the SSO callback and
@@ -87,10 +95,7 @@ server {
         proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Uri $request_uri;
         proxy_set_header X-Auth-Request-Redirect $o2p_rd;
     }
 
@@ -101,22 +106,20 @@ server {
         proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Uri $request_uri;
         proxy_set_header Content-Length "";
         proxy_pass_request_body off;
         # Fail fast (500, closed) if oauth2-proxy hangs, instead of 60s stalls.
         proxy_connect_timeout 2s;
         proxy_read_timeout 5s;
-        proxy_buffer_size 16k;
-        proxy_buffers 4 16k;
     }
 
     location / {
         if ($reserved_host) {
             return 404;
+        }
+        if ($cookie_leftover) {
+            return 400;
         }
 
         auth_request /oauth2/auth;

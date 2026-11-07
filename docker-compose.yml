@@ -94,7 +94,9 @@ services:
       - OAUTH2_PROXY_SESSION_COOKIE_MINIMAL=true
       - OAUTH2_PROXY_PROMPT=select_account consent
       - OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST=true
-      - OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST_LIMIT=10
+      # Up to limit+1 csrf cookies can be pending (trim, then add); with the
+      # session that must fit nginx's 4 cookie-strip passes.
+      - OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST_LIMIT=2
       # nginx already logs every request; keep only auth events here.
       - OAUTH2_PROXY_REQUEST_LOGGING=false
 

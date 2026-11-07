@@ -124,7 +124,9 @@ in separately. SSH tunnel creation (:2222) is unaffected.
   Offboarded users otherwise keep an existing session for up to 12h.
 - **What tunnel apps see:** `X-Forwarded-Email` / `X-Forwarded-User` set by
   nginx (client-sent copies are dropped). oauth2-proxy's cookies are stripped
-  before requests reach sish, so a tunnel never sees visitors' sessions.
+  before requests reach sish, so a tunnel never sees visitors' sessions; a
+  request carrying more of them than nginx can strip (e.g. junk ones a tunnel
+  app planted) gets a 400 instead of being forwarded.
 - **Reserved:** `/oauth2/*` on every tunnel host is handled by the proxy; the
   apex `${DOMAIN}` (the SSO callback) and `origin.${DOMAIN}` never route to a
   tunnel, even if a VM binds that name.
@@ -187,11 +189,14 @@ nginx logs one line per request with the signed-in email.
 ## Upgrading to SSO (0.5.0) on an existing box
 
 1. Add the region's redirect URI to the Google OAuth client.
-2. Add the four SSO values to `.env` (`docker compose up` refuses to start
+2. Confirm the region's CloudFront distribution meets the requirements under
+   "Browser access" (no caching; forwards `Host`, cookies, query strings;
+   HTTPS origin) — otherwise logins through the CDN loop or fail.
+3. Add the four SSO values to `.env` (`docker compose up` refuses to start
    without them).
-3. `docker compose up -d` — this recreates sish, so every tunnel in the region
+4. `docker compose up -d` — this recreates sish, so every tunnel in the region
    drops for a few seconds; VMs reconnect on their own.
-4. Run the smoke tests above.
+5. Run the smoke tests above.
 
 Rollback: check out the previous tag and `docker compose up -d --remove-orphans`
 so nginx releases :80/:443 back to sish.

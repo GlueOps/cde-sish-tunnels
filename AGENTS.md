@@ -30,6 +30,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Published ports are IPv4-only (`0.0.0.0:`), see the comment on sish's ports.
 - Never mount SSH keys into sish (see `/empty-pubkeys` comment).
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
+- `OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST_LIMIT` + 2 (pending csrf cookies + session) must not exceed nginx's 4 cookie-strip passes; add a pass if you raise it.
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
 
 ## Decisions
