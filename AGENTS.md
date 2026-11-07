@@ -9,6 +9,7 @@ See [README.md](./README.md) for the full picture.
 
 - `docker-compose.yml` — the whole stack: letsencrypt, nginx, oauth2-proxy, sish, authenticator.
 - `nginx/templates/default.conf.template` — TLS edge + `auth_request` to oauth2-proxy; `${DOMAIN}` is the only substituted variable.
+- `nginx/njs/cookies.js` — strips oauth2-proxy cookies before requests reach sish.
 - `nginx/watch-cert.sh` — reloads nginx when the cert changes.
 - `auth/` — Flask TOFU SSH-key authenticator (sish's key-check webhook).
 - `deploy-hook.sh` — certbot hook copying certs into `./ssl`.
@@ -30,7 +31,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Published ports are IPv4-only (`0.0.0.0:`), see the comment on sish's ports.
 - Never mount SSH keys into sish (see `/empty-pubkeys` comment).
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
-- `OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST_LIMIT` + 2 (pending csrf cookies + session) must not exceed nginx's 4 cookie-strip passes; add a pass if you raise it.
+- Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
 
 ## Decisions
@@ -45,5 +46,6 @@ Settled; don't re-raise in reviews.
 - **Callback on the apex** `https://${DOMAIN}/oauth2/callback` (no tunnel can bind it; resolves straight to the box).
 - **`.env` for secrets**, matching the existing AWS keys, not `*_FILE` secrets.
 - **No `--trusted-proxy-ip` / split networks:** oauth2-proxy is unpublished and the trusted headers only affect its logs.
-- **Accepted:** anonymous `curl`/XHR gets a 302 to Google, not a 401; websockets are checked only at upgrade; a tunnel app can set cookies on `.${DOMAIN}` (could log other users out); `/oauth2/*` is reserved on every tunnel host.
+- **Only page loads start a login** (`Sec-Fetch-Mode: navigate`, or none, e.g. `curl`, which gets a 302 to Google); signed-out fetch/XHR/websocket/subresource requests get a plain 401, so background traffic can't pile up or evict csrf cookies.
+- **Accepted:** websockets are checked only at upgrade; a tunnel app can set cookies on `.${DOMAIN}` (could log other users out); `/oauth2/*` is reserved on every tunnel host.
 - **CI test runs on every PR but isn't a required check.**

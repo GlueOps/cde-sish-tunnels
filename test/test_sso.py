@@ -122,25 +122,40 @@ def main():
     check("client-sent identity headers dropped",
           "ceo@example.com" not in r.text and "admins" not in r.text)
 
-    # Expired-session tab storm: several sign-in starts leave CSRF cookies;
-    # the session must still be stripped after login.
+    # Expired session with many tabs reloading at once: parallel sign-in starts
+    # each add a csrf cookie (oauth2-proxy can't trim across requests); every
+    # one must still be stripped, with no lockout, after login.
     s4 = session()
-    for _ in range(6):
-        s4.get(APP, allow_redirects=False)
-    csrf = [c.name for c in s4.cookies if c.name.endswith("_csrf")]
-    check("pending CSRF cookies capped at 3", len(csrf) <= 3, str(len(csrf)))
+    for _ in range(12):
+        r = session().get(APP, allow_redirects=False)
+        s4.cookies.update(r.cookies)
     _, r = login("alice@example.com", s=s4)
     cookie_line = next((l for l in r.text.splitlines() if l.startswith("Cookie:")), "")
-    check("session stripped despite pending CSRF cookies", r.status_code == 200 and "_oauth2_proxy" not in r.text,
-          f"{r.status_code} {cookie_line!r}")
+    check("login works after a parallel sign-in burst", r.status_code == 200 and ECHO in r.text,
+          f"{r.status_code} {r.url}")
+    check("session and csrf cookies stripped after the burst", ECHO in r.text and "_oauth2_proxy" not in r.text,
+          repr(cookie_line))
 
-    # A tunnel app planting junk _oauth2_proxy* cookies (longer path, so sent
-    # first) to push the real session past the strip passes: refused outright.
+    # A tab polling in the background must not evict the csrf cookie of the
+    # login the user is in the middle of.
+    s5 = session()
+    idp = s5.get(APP)
+    fetch = [s5.get(APP, allow_redirects=False, headers={"Sec-Fetch-Mode": "cors"}) for _ in range(15)]
+    check("anonymous background fetch gets 401 and no cookie",
+          all(f.status_code == 401 and "set-cookie" not in f.headers for f in fetch),
+          str([f.status_code for f in fetch]))
+    r = s5.post(idp.url, data={"username": "alice@example.com",
+                               "claims": json.dumps({"email": "alice@example.com", "email_verified": True})})
+    check("login in progress survives background polling", r.status_code == 200 and ECHO in r.text,
+          f"{r.status_code} {r.url}")
+
+    # Junk _oauth2_proxy* cookies a tunnel app planted (longer path, so sent
+    # first) are stripped along with the real session.
     for i in range(5):
         s.cookies.set(f"_oauth2_proxy_x{i}", "junk", domain=f".{D}", path="/a")
     r = s.get(APP + "a/", allow_redirects=False)
-    check("planted oauth2-proxy cookies refused, never forwarded", r.status_code == 400 and ECHO not in r.text,
-          str(r.status_code))
+    check("planted oauth2-proxy cookies stripped too", r.status_code == 200 and ECHO in r.text
+          and "_oauth2_proxy" not in r.text, str(r.status_code))
     for i in range(5):
         s.cookies.clear(f".{D}", "/a", f"_oauth2_proxy_x{i}")
 

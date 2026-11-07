@@ -124,9 +124,9 @@ in separately. SSH tunnel creation (:2222) is unaffected.
   Offboarded users otherwise keep an existing session for up to 12h.
 - **What tunnel apps see:** `X-Forwarded-Email` / `X-Forwarded-User` set by
   nginx (client-sent copies are dropped). oauth2-proxy's cookies are stripped
-  before requests reach sish, so a tunnel never sees visitors' sessions; a
-  request carrying more of them than nginx can strip (e.g. junk ones a tunnel
-  app planted) gets a 400 instead of being forwarded.
+  before requests reach sish, so a tunnel never sees visitors' sessions.
+- **Signed-out background requests** (fetch/XHR, websockets, images) get a
+  plain 401; only page loads go to Google, so a reload signs back in.
 - **Reserved:** `/oauth2/*` on every tunnel host is handled by the proxy; the
   apex `${DOMAIN}` (the SSO callback) and `origin.${DOMAIN}` never route to a
   tunnel, even if a VM binds that name.
@@ -199,7 +199,9 @@ nginx logs one line per request with the signed-in email.
 5. Run the smoke tests above.
 
 Rollback: check out the previous tag and `docker compose up -d --remove-orphans`
-so nginx releases :80/:443 back to sish.
+so nginx releases :80/:443 back to sish. Tunnel apps can see session cookies
+again while rolled back, so change `OAUTH2_PROXY_COOKIE_SECRET` when
+upgrading again.
 
 ## Testing
 
