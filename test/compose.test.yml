@@ -1,0 +1,89 @@
+# Layered over ../docker-compose.yml by test/run.sh: the production nginx,
+# oauth2-proxy and sish config, with a mock OIDC IdP in place of Google, a
+# self-signed cert in place of certbot, and nothing published or written to
+# the host's ./ssl or ./sish_users.
+services:
+  letsencrypt:
+    image: alpine/openssl:3.5.4@sha256:42c7389ef077aed0eb4e96d0abbd094083d701bbaff1313073b061c0c9cd8278
+    container_name: !reset null
+    volumes:
+      - ssl:/ssl
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=${DOMAIN} \
+          -addext "subjectAltName=DNS:${DOMAIN},DNS:*.${DOMAIN}" \
+          -keyout /ssl/${DOMAIN}.key -out /ssl/${DOMAIN}.crt 2>/dev/null
+        exec sleep infinity
+
+  nginx:
+    ports: !reset []
+    environment:
+      - CERT_CHECK_SECONDS=2
+    volumes:
+      - ssl:/ssl:ro
+    networks:
+      default:
+        aliases:
+          - ${DOMAIN}
+          - origin.${DOMAIN}
+          - app1.${DOMAIN}
+          - nope.${DOMAIN}
+
+  oauth2-proxy:
+    environment:
+      - OAUTH2_PROXY_PROVIDER=oidc
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=http://idp:8080/default
+
+  # The untouched production oauth2-proxy (Google provider), used only to
+  # check the Google login URL it builds.
+  oauth2-proxy-google:
+    extends:
+      file: docker-compose.yml
+      service: oauth2-proxy
+
+  sish:
+    container_name: !reset null
+    ports: !reset []
+    volumes:
+      - ssl:/ssl
+
+  authenticator:
+    container_name: !reset null
+    volumes:
+      - users:/data
+
+  idp:
+    image: ghcr.io/navikt/mock-oauth2-server:6.1.4@sha256:647dd8c78a54f0e6fcd58d79c884e612f8f998a0662276f3e1db22e464a50192
+    environment:
+      SERVER_PORT: "8080"
+      JSON_CONFIG: '{"interactiveLogin": true}'
+
+  echo:
+    image: jmalloc/echo-server:v0.3.7@sha256:c87f80de8dbb976a59b228fc9ecf257e0574c6f760c2f1c5f05f64c7ac7fbc1e
+
+  # A "VM" holding two tunnels to the echo app: app1 (normal) and origin
+  # (a reserved name nginx must never route to a tunnel).
+  tunnel:
+    build: test
+    restart: always
+    command:
+      - sh
+      - -c
+      - |
+        [ -f /tmp/id ] || ssh-keygen -q -t ed25519 -N '' -f /tmp/id
+        exec ssh -N -i /tmp/id -p 2222 -o StrictHostKeyChecking=no \
+          -o ServerAliveInterval=10 -o ExitOnForwardFailure=yes \
+          -R app1:80:echo:8080 -R origin:80:echo:8080 vm1@sish
+    depends_on: [sish, echo]
+
+  tester:
+    build: test
+    profiles: [test]
+    environment:
+      - DOMAIN=${DOMAIN}
+    depends_on: [nginx, oauth2-proxy-google, tunnel, idp]
+
+volumes:
+  ssl:
+  users:
