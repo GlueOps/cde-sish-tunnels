@@ -11,21 +11,23 @@ Version: 0.4.2 <!-- x-release-please-version -->
 
 This repo is **deployment only**. We run the **upstream sish image unmodified**,
 pinned by digest — there is no fork to maintain. The only custom pieces are the
-Docker Compose stack, a Let's Encrypt certificate sidecar, and a small auth
-service.
+Docker Compose stack, a Let's Encrypt certificate sidecar, a small auth
+service, and a Google SSO edge (nginx + oauth2-proxy) in front of every
+browser request.
 
 ```
-┌────────────┐   SSH :2222    ┌───────────────────────────────────────┐
-│ developer  │ ─────────────► │ sish (ghcr.io/antoniomika/sish)       │
-│ ssh -R ... │   HTTP  :80    │  - terminates tunnels                 │
-└────────────┘   HTTPS :443   │  - asks authenticator to allow a key  │
-                              │  - serves TLS from /ssl               │
-                              └───────┬───────────────────┬───────────┘
-                                      │ POST key check    │ reads certs
-                              ┌───────▼────────┐  ┌────────▼─────────┐
-                              │ authenticator  │  │ letsencrypt      │
-                              │ (Flask, TOFU)  │  │ (certbot route53)│
-                              └────────────────┘  └──────────────────┘
+┌────────────┐  SSH :2222   ┌──────────────────────────────────────┐
+│ CDE VM     │ ───────────► │ sish (ghcr.io/antoniomika/sish)      │
+│ ssh -R ... │              │  - terminates tunnels                │
+└────────────┘              │  - asks authenticator to allow a key │
+                            └──▲──────────────────┬────────────────┘
+┌────────────┐  :80 / :443     │ HTTP :80         │ POST key check
+│ browser    │ ──► nginx ──────┘          ┌───────▼────────┐
+└────────────┘     │ auth_request         │ authenticator  │
+                   ▼                      │ (Flask, TOFU)  │
+              oauth2-proxy ──► Google     └────────────────┘
+              (company domain only)
+                                 letsencrypt (certbot route53) → ./ssl
 ```
 
 ## Components
@@ -35,6 +37,8 @@ service.
 | `sish`          | `ghcr.io/antoniomika/sish` (pinned by digest)   | The SSH tunnel server (upstream, unmodified). |
 | `authenticator` | built from [`./auth`](./auth)                   | Trust-on-first-use SSH key authorizer. |
 | `letsencrypt`   | `certbot/dns-route53`                           | Issues & renews the wildcard TLS cert via DNS-01. |
+| `nginx`         | `nginx` (pinned by digest)                      | TLS edge on :80/:443; every request must pass oauth2-proxy before reaching sish. |
+| `oauth2-proxy`  | `quay.io/oauth2-proxy/oauth2-proxy` (pinned)    | Google SSO check, restricted to `SSO_EMAIL_DOMAIN`. Never published. |
 
 ### Authentication model
 
@@ -58,8 +62,10 @@ service.
 `letsencrypt` runs certbot with the Route53 DNS-01 plugin to obtain `${DOMAIN}`
 and `*.${DOMAIN}`. On issuance/renewal, [`deploy-hook.sh`](./deploy-hook.sh)
 copies the cert into the shared `ssl/` volume as `<domain>.crt` / `<domain>.key`.
-sish watches that directory and reloads automatically. Renewal is checked every
-12 hours.
+sish watches that directory and reloads automatically; nginx's
+[`watch-cert.sh`](./nginx/watch-cert.sh) reloads nginx within 10 minutes of a
+change. Renewal is checked every 12 hours. On first boot nginx waits for the
+cert to exist before starting.
 
 The IAM credentials need: `route53:ListHostedZones`, `route53:GetChange`,
 `route53:ChangeResourceRecordSets`.
@@ -97,8 +103,52 @@ Regional boxes sit behind a per-region CloudFront distribution: browsers hit
 origin-fetches this box as `origin.<region>.tunnels.cde.glueopshosted.com` —
 covered by the same wildcard cert, no extra config here. The box's 443 stays
 directly reachable on purpose (CloudFront is an accelerator, not the security
-boundary). SSH (:2222) is always direct, never through the CDN. The full
+boundary — the SSO edge on the box is). SSH (:2222) is always direct, never through the CDN. The full
 region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
+
+### Browser access (Google SSO)
+
+Every HTTP(S) request — through CloudFront or direct to the box — goes
+through nginx, which asks oauth2-proxy whether the visitor has a session.
+Without one, the browser is sent to Google; only accounts at exactly
+`SSO_EMAIL_DOMAIN` with a verified email get in (others get a 403). One login
+covers every tunnel in that region (cookie on `.${DOMAIN}`); each region logs
+in separately. SSH tunnel creation (:2222) is unaffected.
+
+- **Sessions last a hard 12h** from login, then Google's account picker and
+  consent screen appear again. There is no background refresh on purpose: it
+  would slide the expiry forward indefinitely. An open VS Code tab
+  disconnects at expiry; reloading the tab signs back in.
+- **Kill switch:** changing `OAUTH2_PROXY_COOKIE_SECRET` and running
+  `docker compose up -d oauth2-proxy` signs out everyone on that box at once.
+  Offboarded users otherwise keep an existing session for up to 12h.
+- **What tunnel apps see:** `X-Forwarded-Email` / `X-Forwarded-User` set by
+  nginx (client-sent copies are dropped). oauth2-proxy's cookies are stripped
+  before requests reach sish, so a tunnel never sees visitors' sessions.
+- **Reserved:** `/oauth2/*` on every tunnel host is handled by the proxy; the
+  apex `${DOMAIN}` (the SSO callback) and `origin.${DOMAIN}` never route to a
+  tunnel, even if a VM binds that name.
+- **Browser only.** Webhooks, `curl` and other non-browser clients are
+  redirected to Google and can't reach tunnels; there is no bypass.
+
+One-time Google setup (Google Cloud console → APIs & Services):
+
+1. OAuth consent screen: user type **Internal**, so Google itself rejects
+   accounts outside the Workspace.
+2. Credentials → OAuth client ID, type **Web application**. Add one
+   authorized redirect URI per region:
+   `https://<region>.tunnels.cde.glueopshosted.com/oauth2/callback`.
+   New URIs can take a few minutes to apply.
+3. Put the client ID/secret in each box's `.env`, with a per-box cookie
+   secret (see [`.env.example`](./.env.example)).
+
+CloudFront must not cache, must forward `Host`, cookies and query strings
+(and return `Set-Cookie`), and must fetch the origin over HTTPS — nginx
+redirects :80 to HTTPS. The OAuth callback itself hits the apex, which resolves
+straight to the box, not through CloudFront.
+
+To see why someone was denied: `docker compose logs oauth2-proxy | grep <email>`.
+nginx logs one line per request with the signed-in email.
 
 ## Quick start
 
@@ -117,6 +167,9 @@ region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
    docker compose up -d
    ```
 
+   On first boot nginx starts only once certbot has issued the cert (up to a
+   few minutes).
+
 3. Smoke-test the tunnel and naming mode from any machine:
 
    ```bash
@@ -124,7 +177,38 @@ region rollout runbook lives in GlueOps/slackbot-developer-workspaces#499.
    # → https://smoketest.usfoobar1.tunnels.cde.glueopshosted.com
    # (no <user>- prefix in the URL sish prints — if there is one, the wrong
    #  stack version is deployed)
+   curl -sI https://smoketest.usfoobar1.tunnels.cde.glueopshosted.com/ | grep -i location
+   # → location: https://accounts.google.com/... (SSO is enforcing)
    ```
+
+   Then open the URL in a browser, sign in with a company account, and check
+   the app loads — once through CloudFront and once direct to the box.
+
+## Upgrading to SSO (0.5.0) on an existing box
+
+1. Add the region's redirect URI to the Google OAuth client.
+2. Add the four SSO values to `.env` (`docker compose up` refuses to start
+   without them).
+3. `docker compose up -d` — this recreates sish, so every tunnel in the region
+   drops for a few seconds; VMs reconnect on their own.
+4. Run the smoke tests above.
+
+Rollback: check out the previous tag and `docker compose up -d --remove-orphans`
+so nginx releases :80/:443 back to sish.
+
+## Testing
+
+```bash
+./test/run.sh
+```
+
+Runs the production compose stack layered with
+[`test/compose.test.yml`](./test/compose.test.yml): a mock OIDC IdP stands in
+for Google, a self-signed cert for certbot, and nothing is published or
+written to `./ssl` / `./sish_users`. It checks login, denial, cookie
+stripping, header spoofing, websockets, redirects, reserved hosts, `ssh -L`
+bypass, the Google login URL, and cert reload. CI runs the same script on
+every PR. Not covered: a real Google login and CloudFront.
 
 ## Upgrading sish
 
