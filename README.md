@@ -132,6 +132,10 @@ in separately. SSH tunnel creation (:2222) is unaffected.
   tunnel, even if a VM binds that name.
 - **Browser only.** Webhooks, `curl` and other non-browser clients are
   redirected to Google and can't reach tunnels; there is no bypass.
+- **TLS 1.3 only** on :443, with HSTS covering every subdomain. Clients that
+  can't do TLS 1.3 (very old browsers, some TLS-inspecting proxies) can't
+  connect. nginx logs `tls=` and `curve=` per request, and `cf=` (CloudFront's
+  request ID) on requests that came through CloudFront.
 
 One-time Google setup (Google Cloud console → APIs & Services):
 
@@ -155,6 +159,22 @@ policy plus **AllViewer** origin request policy covers all the forwarding):
 | Forward cookies and return `Set-Cookie` | Nobody can log in through CloudFront: the sign-in cookie is dropped, so login fails with a 403 or keeps bouncing to Google. |
 | HTTPS to the origin | Every tunnel loops: nginx redirects HTTP to HTTPS, and CloudFront hands the redirect back to the browser. |
 | Forward `Sec-Fetch-Mode` | Still works, but background requests start logins too, so a polling tab can occasionally break a login in progress (retrying fixes it). |
+| TLS 1.3 to the origin | Every request through CloudFront gets a 502. CloudFront negotiates 1.3 to origins automatically (since Nov 2025); no setting controls it. |
+
+To confirm CloudFront reaches the box, browse a tunnel through CloudFront, then
+on the box count its requests (a refused handshake leaves no log line, so a
+failure shows as zero, not as TLS 1.2):
+
+```bash
+docker compose logs --since 10m nginx | grep -c ' cf="[^-]'
+```
+
+If CloudFront 502s only because of TLS 1.3, don't roll back to 0.4.2 (that
+removes SSO). Set `ssl_protocols TLSv1.2 TLSv1.3;` in
+`nginx/templates/default.conf.template`, run `docker compose restart nginx`,
+and check `docker compose ps nginx` shows it running (a typo keeps nginx down).
+Undo the edit (`git checkout -- nginx/templates/default.conf.template`) before
+the next deploy.
 
 The OAuth callback itself hits the apex, which resolves straight to the box,
 not through CloudFront.
@@ -198,8 +218,9 @@ nginx logs one line per request with the signed-in email.
    # → https://smoketest.usfoobar1.tunnels.cde.glueopshosted.com
    # (no <user>- prefix in the URL sish prints — if there is one, the wrong
    #  stack version is deployed)
-   curl -sI https://smoketest.usfoobar1.tunnels.cde.glueopshosted.com/ | grep -i location
-   # → location: https://accounts.google.com/... (SSO is enforcing)
+   curl -sI https://smoketest.usfoobar1.tunnels.cde.glueopshosted.com/ | grep -iE '^(HTTP|location|x-cache)'
+   # → HTTP/2 302 + location: https://accounts.google.com/... (SSO is enforcing)
+   # (through CloudFront, 502 + x-cache: Error from cloudfront = origin TLS failed)
    ```
 
    Then open the URL in a browser, sign in with a company account, and check
@@ -226,6 +247,13 @@ release changed that file, refuses the checkout and the chain stops.
   changed the build is cached and the authenticator isn't restarted.
 - `--remove-orphans`: removes services a release dropped, so they can't keep
   holding ports (e.g. nginx's :80/:443 when rolling back past 0.5.0).
+
+nginx reads `nginx/templates/` and `nginx/njs/` only when its container
+starts, and this command doesn't recreate it for those files. If `nginx/`
+differs between the tag you left and the one you deployed
+(`git diff --stat <old-tag> <new-tag> -- nginx/`), also run
+`docker compose restart nginx`. That includes rollbacks, except past 0.5.0,
+where there is no nginx.
 
 ## Upgrading to SSO (0.5.0) on an existing box
 
@@ -255,7 +283,7 @@ Runs the production compose stack layered with
 for Google, a self-signed cert for certbot, and nothing is published or
 written to `./ssl` / `./sish_users`. It checks login, denial, cookie
 stripping, header spoofing, websockets, redirects, reserved hosts, `ssh -L`
-bypass, the Google login URL, and cert reload. CI runs the same script on
+bypass, the Google login URL, TLS 1.3 only, HSTS, and cert reload. CI runs the same script on
 every PR. Not covered: a real Google login and CloudFront.
 
 ## Upgrading sish

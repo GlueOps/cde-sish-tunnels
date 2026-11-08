@@ -33,6 +33,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Deploy commands in docs are always `docker compose up -d --build --remove-orphans`: plain `up -d` never rebuilds `auth/` on existing boxes, and dropped services would keep their ports.
 - Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. "Upgrading to SSO (0.5.0)") stays hardcoded.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
+- TLS protocol/session settings live at http level in the nginx template so every server inherits them. Don't set `ssl_ecdh_curve` (the default prefers post-quantum X25519MLKEM768).
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
 
@@ -51,3 +52,5 @@ Settled; don't re-raise in reviews.
 - **Only page loads start a login** (`Sec-Fetch-Mode: navigate`, or none, e.g. `curl`, which gets a 302 to Google); signed-out fetch/XHR/websocket/subresource requests get a plain 401, so background traffic can't pile up or evict csrf cookies.
 - **Accepted:** websockets are checked only at upgrade; a tunnel app can set cookies on `.${DOMAIN}` (could log other users out); `/oauth2/*` is reserved on every tunnel host.
 - **CI test runs on every PR but isn't a required check.**
+- **TLS 1.3 hardcoded**, not an `.env` setting; falling back means a release (or an edit plus `docker compose restart nginx`).
+- **Deferred:** making deploys apply `nginx/` changes on their own (e.g. building the config into an image); the README says to restart nginx meanwhile.

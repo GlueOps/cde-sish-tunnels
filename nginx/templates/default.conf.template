@@ -2,6 +2,12 @@
 
 resolver 127.0.0.11 valid=10s ipv6=off;
 
+# TLS 1.3 only (Mozilla "modern"), at http level so every server inherits it.
+ssl_protocols TLSv1.3;
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 1d;
+ssl_session_tickets off;
+
 # `resolve` re-resolves container IPs, so recreating sish or oauth2-proxy
 # doesn't leave nginx proxying to a stale address.
 upstream oauth2_proxy {
@@ -54,8 +60,10 @@ map $host $reserved_host {
     default          0;
 }
 
+# cf: CloudFront's request ID (X-Amz-Cf-Id), "-" for direct requests.
 log_format sso '$remote_addr $host "$request" $status $upstream_status '
-               '$request_time "$auth_email" xff="$http_x_forwarded_for"';
+               '$request_time "$auth_email" xff="$http_x_forwarded_for" '
+               'tls=$ssl_protocol curve=$ssl_curve cf="$http_x_amz_cf_id"';
 
 server {
     listen 80 default_server;
@@ -71,7 +79,7 @@ server {
     access_log /dev/stdout sso;
 
     client_max_body_size 0;
-    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     location /oauth2/ {
         proxy_pass http://oauth2_proxy;

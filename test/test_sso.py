@@ -189,7 +189,11 @@ def main():
     check("http redirected to https", r.status_code == 301 and r.headers["Location"] == f"https://app1.{D}/x?y=1",
           r.headers.get("Location", ""))
     r = session().get(APP, allow_redirects=False)
-    check("HSTS header set", "max-age=31536000" in r.headers.get("Strict-Transport-Security", ""))
+    check("HSTS header covers subdomains",
+          "max-age=31536000; includeSubDomains" in r.headers.get("Strict-Transport-Security", ""),
+          r.headers.get("Strict-Transport-Security", ""))
+    check("TLS 1.2 refused", tls_handshake(ssl.TLSVersion.TLSv1_2) is None)
+    check("TLS 1.3 accepted", (tls_handshake() or [None])[0] == "TLSv1.3")
 
     s3 = session()
     r = s3.get(f"https://{D}/oauth2/start?rd=https://evil.example/")
@@ -230,14 +234,22 @@ def main():
     sys.exit(0 if all(results) else 1)
 
 
-def fingerprint():
+def tls_handshake(version=ssl.TLSVersion.TLSv1_3):
+    """(protocol, DER cert) when the client offers only `version`, else None."""
     ctx = ssl.create_default_context()
-    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.minimum_version = ctx.maximum_version = version
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    with socket.create_connection((f"app1.{D}", 443), timeout=5) as sock:
-        with ctx.wrap_socket(sock, server_hostname=f"app1.{D}") as tls:
-            print(hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest())
+    try:
+        with socket.create_connection((f"app1.{D}", 443), timeout=5) as sock:
+            with ctx.wrap_socket(sock, server_hostname=f"app1.{D}") as tls:
+                return tls.version(), tls.getpeercert(binary_form=True)
+    except ssl.SSLError:
+        return None
+
+
+def fingerprint():
+    print(hashlib.sha256(tls_handshake()[1]).hexdigest())
 
 
 if __name__ == "__main__":
