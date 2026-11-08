@@ -176,7 +176,7 @@ nginx logs one line per request with the signed-in email.
 2. Start the stack:
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d --build --remove-orphans
    ```
 
    On first boot nginx starts only once certbot has issued the cert (up to a
@@ -198,16 +198,19 @@ nginx logs one line per request with the signed-in email.
 
 ## Deploying
 
-Every deploy, upgrade and rollback is the same command, run from the checked-out
-tag:
+Every deploy, upgrade and rollback is the same two steps: check out the
+release tag, then bring the stack up from it:
 
 ```bash
-docker compose up -d --build
+git fetch --tags && git checkout vX.Y.Z
+docker compose up -d --build --remove-orphans
 ```
 
-`--build` matters: the authenticator is built locally from `auth/`, and plain
-`up -d` keeps the old image forever once one exists. When `auth/` hasn't
-changed the build is cached and the authenticator isn't restarted.
+- `--build`: the authenticator is built locally from `auth/`, and plain
+  `up -d` keeps the old image forever once one exists. When `auth/` hasn't
+  changed the build is cached and the authenticator isn't restarted.
+- `--remove-orphans`: removes services a release dropped, so they can't keep
+  holding ports (e.g. nginx's :80/:443 when rolling back past 0.5.0).
 
 ## Upgrading to SSO (0.5.0) on an existing box
 
@@ -217,12 +220,12 @@ changed the build is cached and the authenticator isn't restarted.
    HTTPS origin) — otherwise logins through the CDN loop or fail.
 3. Add the four SSO values to `.env` (`docker compose up` refuses to start
    without them).
-4. `docker compose up -d --build` — this recreates sish, so every tunnel in the region
-   drops for a few seconds; VMs reconnect on their own.
+4. Deploy `v0.5.0` (see Deploying). This recreates sish, so every tunnel in
+   the region drops for a few seconds; VMs reconnect on their own.
 5. Run the smoke tests above.
 
-Rollback: check out the previous tag and `docker compose up -d --build --remove-orphans`
-so nginx releases :80/:443 back to sish. Tunnel apps can see session cookies
+Rollback: deploy the previous tag (see Deploying); `--remove-orphans` makes
+nginx release :80/:443 back to sish. Tunnel apps can see session cookies
 again while rolled back, so change `OAUTH2_PROXY_COOKIE_SECRET` when
 upgrading again.
 
@@ -256,7 +259,7 @@ To bump:
 
 3. Update the `image:` line to `ghcr.io/antoniomika/sish:vX.Y.Z@sha256:...`.
 4. Confirm any sish flags we pass still exist in that release before merging.
-5. After the release, deploy with `docker compose up -d --build` (see Deploying).
+5. After the release, deploy it (see Deploying).
 
 ## Releases
 
