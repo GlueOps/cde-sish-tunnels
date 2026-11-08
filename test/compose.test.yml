@@ -47,7 +47,7 @@ services:
     container_name: !reset null
     ports: !reset []
     volumes:
-      - ssl:/ssl
+      - ssl:/ssl:ro
 
   authenticator:
     container_name: !reset null

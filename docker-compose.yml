@@ -117,7 +117,8 @@ services:
       # 80/443 are NOT published: browsers must go through nginx's SSO.
       - "0.0.0.0:2222:2222"
     volumes:
-      - ./ssl:/ssl
+      # sish only reads the cert; a compromised sish mustn't replace what nginx serves.
+      - ./ssl:/ssl:ro
     # /empty-pubkeys: sish accepts any key found in its authentication-keys
     # directory WITHOUT consulting the auth webhook. The image's default dir
     # ships (effectively) empty, but pointing the flag at a tmpfs makes the
