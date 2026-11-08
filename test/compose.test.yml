@@ -4,7 +4,7 @@
 # the host's ./ssl or ./sish_users.
 services:
   letsencrypt:
-    image: alpine/openssl:3.5.4@sha256:42c7389ef077aed0eb4e96d0abbd094083d701bbaff1313073b061c0c9cd8278
+    image: alpine/openssl:3.5.9@sha256:6821afa2476e11be343f29275f2ca24291720ff0a7148bd131fd8e314ff26d9e
     container_name: !reset null
     init: true
     volumes:
