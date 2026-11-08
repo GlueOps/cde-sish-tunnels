@@ -31,6 +31,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Published ports are IPv4-only (`0.0.0.0:`), see the comment on sish's ports.
 - Never mount SSH keys into sish (see `/empty-pubkeys` comment).
 - Deploy commands in docs are always `docker compose up -d --build --remove-orphans`: plain `up -d` never rebuilds `auth/` on existing boxes, and dropped services would keep their ports.
+- Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. "Upgrading to SSO (0.5.0)") stays hardcoded.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).

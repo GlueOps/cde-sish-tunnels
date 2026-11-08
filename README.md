@@ -164,7 +164,16 @@ nginx logs one line per request with the signed-in email.
 
 ## Quick start
 
-1. Configure environment:
+1. Get the latest release:
+
+   <!-- x-release-please-start-version -->
+   ```bash
+   git clone https://github.com/GlueOps/cde-sish-tunnels.git && cd cde-sish-tunnels
+   git checkout v0.4.2
+   ```
+   <!-- x-release-please-end -->
+
+2. Configure environment:
 
    ```bash
    cp .env.example .env
@@ -173,7 +182,7 @@ nginx logs one line per request with the signed-in email.
    Edit `.env` and set every value for this deployment — the comments in
    [`.env.example`](./.env.example) explain each one.
 
-2. Start the stack:
+3. Start the stack:
 
    ```bash
    docker compose up -d --build --remove-orphans
@@ -182,7 +191,7 @@ nginx logs one line per request with the signed-in email.
    On first boot nginx starts only once certbot has issued the cert (up to a
    few minutes).
 
-3. Smoke-test the tunnel and naming mode from any machine:
+4. Smoke-test the tunnel and naming mode from any machine:
 
    ```bash
    ssh -p 2222 -R smoketest:80:localhost:3000 usfoobar1.tunnels.cde.glueopshosted.com
@@ -198,13 +207,19 @@ nginx logs one line per request with the signed-in email.
 
 ## Deploying
 
-Every deploy, upgrade and rollback is the same two steps: check out the
-release tag, then bring the stack up from it:
+Every deploy, upgrade and rollback is one command: check out the release tag,
+then bring the stack up from it. It shows the latest release; for a rollback,
+put the previous tag in its place.
 
+<!-- x-release-please-start-version -->
 ```bash
-git fetch --tags && git checkout vX.Y.Z
-docker compose up -d --build --remove-orphans
+git fetch --tags && git checkout v0.4.2 && docker compose up -d --build --remove-orphans
 ```
+<!-- x-release-please-end -->
+
+Run `git status` first and undo local edits to tracked files (e.g. an
+uncommented `--debug`): git carries them into the new release, or, if the
+release changed that file, refuses the checkout and the chain stops.
 
 - `--build`: the authenticator is built locally from `auth/`, and plain
   `up -d` keeps the old image forever once one exists. When `auth/` hasn't
