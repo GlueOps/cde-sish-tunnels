@@ -232,6 +232,7 @@ def main():
 
 def fingerprint():
     ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     with socket.create_connection((f"app1.{D}", 443), timeout=5) as sock:
