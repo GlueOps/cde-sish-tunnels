@@ -144,9 +144,10 @@ One-time Google setup (Google Cloud console → APIs & Services):
 3. Put the client ID/secret in each box's `.env`, with a per-box cookie
    secret (see [`.env.example`](./.env.example)).
 
-CloudFront must not cache, must forward `Host`, cookies and query strings
-(and return `Set-Cookie`), and must fetch the origin over HTTPS — nginx
-redirects :80 to HTTPS. The OAuth callback itself hits the apex, which resolves
+CloudFront must not cache, must forward `Host`, cookies, query strings and
+`Sec-Fetch-Mode` (and return `Set-Cookie`), and must fetch the origin over
+HTTPS — nginx redirects :80 to HTTPS. Without `Sec-Fetch-Mode`, background
+requests start logins too, which works but brings back csrf cookie pile-up. The OAuth callback itself hits the apex, which resolves
 straight to the box, not through CloudFront.
 
 To see why someone was denied: `docker compose logs oauth2-proxy | grep <email>`.
