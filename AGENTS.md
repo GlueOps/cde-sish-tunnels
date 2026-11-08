@@ -30,6 +30,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Never publish sish's 80/443 or oauth2-proxy's 4180. Only nginx faces browsers.
 - Published ports are IPv4-only (`0.0.0.0:`), see the comment on sish's ports.
 - Never mount SSH keys into sish (see `/empty-pubkeys` comment).
+- Deploy commands in docs are always `docker compose up -d --build`; plain `up -d` never rebuilds `auth/` on existing boxes.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).

@@ -176,7 +176,7 @@ nginx logs one line per request with the signed-in email.
 2. Start the stack:
 
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
    On first boot nginx starts only once certbot has issued the cert (up to a
@@ -196,6 +196,19 @@ nginx logs one line per request with the signed-in email.
    Then open the URL in a browser, sign in with a company account, and check
    the app loads — once through CloudFront and once direct to the box.
 
+## Deploying
+
+Every deploy, upgrade and rollback is the same command, run from the checked-out
+tag:
+
+```bash
+docker compose up -d --build
+```
+
+`--build` matters: the authenticator is built locally from `auth/`, and plain
+`up -d` keeps the old image forever once one exists. When `auth/` hasn't
+changed the build is cached and the authenticator isn't restarted.
+
 ## Upgrading to SSO (0.5.0) on an existing box
 
 1. Add the region's redirect URI to the Google OAuth client.
@@ -204,11 +217,11 @@ nginx logs one line per request with the signed-in email.
    HTTPS origin) — otherwise logins through the CDN loop or fail.
 3. Add the four SSO values to `.env` (`docker compose up` refuses to start
    without them).
-4. `docker compose up -d` — this recreates sish, so every tunnel in the region
+4. `docker compose up -d --build` — this recreates sish, so every tunnel in the region
    drops for a few seconds; VMs reconnect on their own.
 5. Run the smoke tests above.
 
-Rollback: check out the previous tag and `docker compose up -d --remove-orphans`
+Rollback: check out the previous tag and `docker compose up -d --build --remove-orphans`
 so nginx releases :80/:443 back to sish. Tunnel apps can see session cookies
 again while rolled back, so change `OAUTH2_PROXY_COOKIE_SECRET` when
 upgrading again.
@@ -243,6 +256,7 @@ To bump:
 
 3. Update the `image:` line to `ghcr.io/antoniomika/sish:vX.Y.Z@sha256:...`.
 4. Confirm any sish flags we pass still exist in that release before merging.
+5. After the release, deploy with `docker compose up -d --build` (see Deploying).
 
 ## Releases
 
