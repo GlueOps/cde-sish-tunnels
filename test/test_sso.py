@@ -193,7 +193,7 @@ def main():
           "max-age=31536000; includeSubDomains" in r.headers.get("Strict-Transport-Security", ""),
           r.headers.get("Strict-Transport-Security", ""))
     check("TLS 1.2 refused", tls_handshake(ssl.TLSVersion.TLSv1_2) is None)
-    check("TLS 1.3 accepted", (tls_handshake() or [None])[0] == "TLSv1.3")
+    check("TLS 1.3 accepted", tls_handshake() is not None)
 
     s3 = session()
     r = s3.get(f"https://{D}/oauth2/start?rd=https://evil.example/")
@@ -235,7 +235,7 @@ def main():
 
 
 def tls_handshake(version=ssl.TLSVersion.TLSv1_3):
-    """(protocol, DER cert) when the client offers only `version`, else None."""
+    """nginx's DER cert when the client offers only `version`, else None."""
     ctx = ssl.create_default_context()
     ctx.minimum_version = ctx.maximum_version = version
     ctx.check_hostname = False
@@ -243,20 +243,14 @@ def tls_handshake(version=ssl.TLSVersion.TLSv1_3):
     try:
         with socket.create_connection((f"app1.{D}", 443), timeout=5) as sock:
             with ctx.wrap_socket(sock, server_hostname=f"app1.{D}") as tls:
-                return tls.version(), tls.getpeercert(binary_form=True)
+                return tls.getpeercert(binary_form=True)
     except ssl.SSLError:
         return None
 
 
 def fingerprint():
-    print(hashlib.sha256(tls_handshake()[1]).hexdigest())
-
-
-def hostkey():
-    out = subprocess.run(["ssh-keyscan", "-p", "2222", "-t", "ed25519", "sish"],
-                         capture_output=True, text=True, timeout=10).stdout
-    print(out.split()[-1] if out.strip() else "")
+    print(hashlib.sha256(tls_handshake()).hexdigest())
 
 
 if __name__ == "__main__":
-    {"fingerprint": fingerprint, "hostkey": hostkey}.get((sys.argv[1:] or [""])[0], main)()
+    fingerprint() if sys.argv[1:] == ["fingerprint"] else main()

@@ -32,12 +32,17 @@ echo "sso-test: running checks"
 compose run --rm tester python -I /test_sso.py
 
 echo "sso-test: checking sish keeps its SSH host key across a recreate"
-key_before=$(compose run --rm tester python -I /test_sso.py hostkey)
+hostkey() { compose run --rm tester ssh-keyscan -p 2222 -t ed25519 sish 2>/dev/null || true; }
+key_before=$(hostkey)
 compose up -d --force-recreate sish
-sleep 3
-key_after=$(compose run --rm tester python -I /test_sso.py hostkey)
+key_after=""
+for _ in $(seq 10); do
+  sleep 1
+  key_after=$(hostkey)
+  [ -n "$key_after" ] && break
+done
 if [ -z "$key_before" ] || [ "$key_after" != "$key_before" ]; then
-  echo "FAIL  sish host key changed on recreate (before=${key_before:-none})"
+  echo "FAIL  sish host key changed on recreate (before=${key_before:-none} after=${key_after:-none})"
   exit 1
 fi
 echo "PASS  sish host key survives a recreate"
