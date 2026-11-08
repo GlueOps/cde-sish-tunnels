@@ -13,6 +13,7 @@ See [README.md](./README.md) for the full picture.
 - `nginx/watch-cert.sh` — reloads nginx when the cert changes.
 - `auth/` — Flask TOFU SSH-key authenticator (sish's key-check webhook).
 - `deploy-hook.sh` — certbot hook copying certs into `./ssl`.
+- `MIGRATION.md` — one-time steps between specific versions.
 - `test/` — end-to-end SSO test (`run.sh`, compose override, checks in `test_sso.py`).
 - `.env.example` — every deploy-time setting, with comments.
 
@@ -29,10 +30,10 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Pin every image by tag **and** digest; don't use unpinned images.
 - Never publish sish's 80/443 or oauth2-proxy's 4180. Only nginx faces browsers.
 - Published ports are IPv4-only (`0.0.0.0:`), see the comment on sish's ports.
-- Never mount SSH keys into sish (see `/empty-pubkeys` comment).
-- Deploy commands in docs are always `docker compose up -d --build --force-recreate --remove-orphans`: `--build` rebuilds `auth/`, `--force-recreate` picks up mounted config (`nginx/`) that compose doesn't track, `--remove-orphans` frees ports of dropped services.
-- sish's SSH host key lives in the `sish-keys` volume; don't drop it, or every deploy changes the key.
-- Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. "Upgrading to SSO (0.5.0)") stays hardcoded.
+- Never mount client SSH keys into sish (see `/empty-pubkeys` comment); never drop the `sish-keys` volume (sish's host key).
+- Routine deploy commands in docs are always `docker compose up -d --build --force-recreate --remove-orphans` (README "Deploying" explains each flag). MIGRATION.md's host-key steps use `up --no-start`, `cp`, `start` on purpose: copying after sish starts races its key generation.
+- One-time upgrade steps go in `MIGRATION.md` under a section naming the versions they apply to; the README stays about new boxes and routine deploys.
+- Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. MIGRATION.md's "0.4.x → 0.5.0") stays hardcoded.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
 - TLS protocol/session settings live at http level in the nginx template so every server inherits them. Don't set `ssl_ecdh_curve` (the default prefers post-quantum X25519MLKEM768).
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
@@ -55,4 +56,4 @@ Settled; don't re-raise in reviews.
 - **CI test runs on every PR but isn't a required check.**
 - **TLS 1.3 hardcoded**, not an `.env` setting; falling back means a release (or an edit plus `docker compose restart nginx`).
 - **Every deploy recreates every container** (`--force-recreate`), dropping all tunnels for a few seconds; accepted over building nginx into its own image.
-- **VMs connect without strict host key checking.** OpenSSH still disables forwarding when a saved `known_hosts` entry mismatches, so the key is persisted and the 0.5.0 upgrade carries the old one over.
+- **VMs connect without strict host key checking.** OpenSSH still disables forwarding when a saved `known_hosts` entry mismatches, so MIGRATION.md carries the host key over on upgrade and rollback.

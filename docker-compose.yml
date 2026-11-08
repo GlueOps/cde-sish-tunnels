@@ -125,7 +125,8 @@ services:
     # /empty-pubkeys: sish accepts any key found in its authentication-keys
     # directory WITHOUT consulting the auth webhook. The image's default dir
     # ships (effectively) empty, but pointing the flag at a tmpfs makes the
-    # bypass impossible by construction — never mount keys into this stack.
+    # bypass impossible by construction — never mount client keys into this stack
+    # (sish's own host key in sish-keys above is a different thing).
     tmpfs:
       - /empty-pubkeys
     # --https stays on only so sish prints https:// URLs to developers.

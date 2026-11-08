@@ -169,12 +169,21 @@ failure shows as zero, not as TLS 1.2):
 docker compose logs --since 10m nginx | grep -c ' cf="[^-]'
 ```
 
-If CloudFront 502s only because of TLS 1.3, don't roll back to 0.4.2 (that
-removes SSO). Set `ssl_protocols TLSv1.2 TLSv1.3;` in
-`nginx/templates/default.conf.template`, run `docker compose restart nginx`,
-and check `docker compose ps nginx` shows it running (a typo keeps nginx down).
-Undo the edit (`git checkout -- nginx/templates/default.conf.template`) before
-the next deploy.
+**TLS 1.3 fallback:** if CloudFront 502s only because of TLS 1.3, allow TLS
+1.2 rather than rolling back. In `nginx/templates/default.conf.template`
+replace the `ssl_protocols` line with:
+
+```nginx
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers ECDHE+AESGCM:ECDHE+CHACHA20;
+```
+
+Check it (`docker compose run --rm --no-deps -T nginx /docker-entrypoint.sh nginx -t -g 'load_module modules/ngx_http_js_module.so;'`),
+then `docker compose restart nginx`; only nginx restarts, tunnels stay up. The
+edit is a local change: the next deploy keeps it (or refuses the checkout if
+the release changed that file). Undo it with
+`git checkout -- nginx/templates/default.conf.template` only once CloudFront
+negotiates TLS 1.3 or a release handles it, or the 502s come back.
 
 The OAuth callback itself hits the apex, which resolves straight to the box,
 not through CloudFront.
@@ -228,9 +237,11 @@ nginx logs one line per request with the signed-in email.
 
 ## Deploying
 
-Every deploy, upgrade and rollback is one command: check out the release tag,
-then bring the stack up from it. It shows the latest release; for a rollback,
-put the previous tag in its place.
+Every routine deploy, upgrade and rollback is one command: check out the
+release tag, then bring the stack up from it. It shows the latest release; for
+a rollback, put the previous tag in its place. Moving across a version listed
+in [MIGRATION.md](./MIGRATION.md) (e.g. 0.4.x ↔ 0.5.0, either direction)
+follows its steps instead.
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -240,7 +251,9 @@ git fetch --tags && git checkout v0.4.2 && docker compose up -d --build --force-
 
 Run `git status` first and undo local edits to tracked files (e.g. an
 uncommented `--debug`): git carries them into the new release, or, if the
-release changed that file, refuses the checkout and the chain stops.
+release changed that file, refuses the checkout and the chain stops. Keep an
+active TLS 1.3 fallback edit (see "Browser access") unless the release fixes
+it.
 
 - `--build`: the authenticator is built locally from `auth/`, and plain
   `up -d` keeps the old image forever once one exists.
@@ -248,43 +261,19 @@ release changed that file, refuses the checkout and the chain stops.
   `nginx/njs/`, `nginx/watch-cert.sh`) are only read at container start, and
   compose doesn't recreate a container for them. Recreating everything means
   every change is picked up, at the cost of every deploy dropping all tunnels
-  and browser access for a few seconds (VMs reconnect on their own; sessions
-  survive, they live in the cookie). sish keeps its SSH host key in the
-  `sish-keys` volume, so it doesn't change on redeploy.
+  and browser access for about 10 seconds (VMs reconnect on their own;
+  sessions survive, they live in the cookie).
 - `--remove-orphans`: removes services a release dropped, so they can't keep
-  holding ports (e.g. nginx's :80/:443 when rolling back past 0.5.0).
+  holding ports.
 
-## Upgrading to SSO (0.5.0) on an existing box
+Recreating a container deletes its logs. To keep them (e.g. mid-incident),
+save them first: `(umask 077; docker compose logs -t > ~/pre-deploy-$(date +%F-%H%M).log)`
+(they hold users' emails and IPs; delete the file when done).
 
-1. Add the region's redirect URI to the Google OAuth client.
-2. Confirm the region's CloudFront distribution meets the requirements under
-   "Browser access" (no caching; forwards `Host`, cookies, query strings;
-   HTTPS origin) — otherwise logins through the CDN loop or fail.
-3. Add the four SSO values to `.env` (`docker compose up` refuses to start
-   without them).
-4. Save sish's SSH host key from the running 0.4.x container (0.5.0 keeps it
-   in the `sish-keys` volume; before, it lived only inside the container):
+Never delete the `sish-keys` volume (`docker compose down -v`): it holds sish's
+SSH host key, and a new key disables every VM's tunnels until each VM runs
+`ssh-keygen -R '[<region>.tunnels.cde.glueopshosted.com]:2222'`.
 
-   ```bash
-   docker cp sish:/app/deploy/keys/ssh_key /tmp/sish-host-key
-   ```
-
-5. Deploy `v0.5.0` (see Deploying). Every tunnel in the region drops for a
-   few seconds; VMs reconnect on their own.
-6. Put the old host key back, so VMs don't see a changed key (OpenSSH
-   disables their tunnels on a mismatch with a saved `known_hosts` entry,
-   even with `StrictHostKeyChecking=no`):
-
-   ```bash
-   docker compose cp /tmp/sish-host-key sish:/keys/ssh_key && docker compose restart sish && rm /tmp/sish-host-key
-   ```
-
-7. Run the smoke tests above.
-
-Rollback: deploy the previous tag (see Deploying); `--remove-orphans` makes
-nginx release :80/:443 back to sish. Tunnel apps can see session cookies
-again while rolled back, so change `OAUTH2_PROXY_COOKIE_SECRET` when
-upgrading again.
 
 ## Testing
 
@@ -297,7 +286,8 @@ Runs the production compose stack layered with
 for Google, a self-signed cert for certbot, and nothing is published or
 written to `./ssl` / `./sish_users`. It checks login, denial, cookie
 stripping, header spoofing, websockets, redirects, reserved hosts, `ssh -L`
-bypass, the Google login URL, TLS 1.3 only, HSTS, and cert reload. CI runs the same script on
+bypass, the Google login URL, TLS 1.3 only, HSTS, the SSH host key surviving
+a recreate, and cert reload. CI runs the same script on
 every PR. Not covered: a real Google login and CloudFront.
 
 ## Upgrading sish
