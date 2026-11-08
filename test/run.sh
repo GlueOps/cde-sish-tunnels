@@ -31,6 +31,17 @@ compose up -d
 echo "sso-test: running checks"
 compose run --rm tester python -I /test_sso.py
 
+echo "sso-test: checking sish keeps its SSH host key across a recreate"
+key_before=$(compose run --rm tester python -I /test_sso.py hostkey)
+compose up -d --force-recreate sish
+sleep 3
+key_after=$(compose run --rm tester python -I /test_sso.py hostkey)
+if [ -z "$key_before" ] || [ "$key_after" != "$key_before" ]; then
+  echo "FAIL  sish host key changed on recreate (before=${key_before:-none})"
+  exit 1
+fi
+echo "PASS  sish host key survives a recreate"
+
 echo "sso-test: checking nginx picks up a renewed certificate"
 before=$(compose run --rm tester python -I /test_sso.py fingerprint)
 # The test letsencrypt service issues a fresh self-signed cert on every start.

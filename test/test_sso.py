@@ -252,5 +252,11 @@ def fingerprint():
     print(hashlib.sha256(tls_handshake()[1]).hexdigest())
 
 
+def hostkey():
+    out = subprocess.run(["ssh-keyscan", "-p", "2222", "-t", "ed25519", "sish"],
+                         capture_output=True, text=True, timeout=10).stdout
+    print(out.split()[-1] if out.strip() else "")
+
+
 if __name__ == "__main__":
-    fingerprint() if sys.argv[1:] == ["fingerprint"] else main()
+    {"fingerprint": fingerprint, "hostkey": hostkey}.get((sys.argv[1:] or [""])[0], main)()

@@ -205,7 +205,7 @@ nginx logs one line per request with the signed-in email.
 3. Start the stack:
 
    ```bash
-   docker compose up -d --build --remove-orphans
+   docker compose up -d --build --force-recreate --remove-orphans
    ```
 
    On first boot nginx starts only once certbot has issued the cert (up to a
@@ -234,7 +234,7 @@ put the previous tag in its place.
 
 <!-- x-release-please-start-version -->
 ```bash
-git fetch --tags && git checkout v0.4.2 && docker compose up -d --build --remove-orphans
+git fetch --tags && git checkout v0.4.2 && docker compose up -d --build --force-recreate --remove-orphans
 ```
 <!-- x-release-please-end -->
 
@@ -243,17 +243,16 @@ uncommented `--debug`): git carries them into the new release, or, if the
 release changed that file, refuses the checkout and the chain stops.
 
 - `--build`: the authenticator is built locally from `auth/`, and plain
-  `up -d` keeps the old image forever once one exists. When `auth/` hasn't
-  changed the build is cached and the authenticator isn't restarted.
+  `up -d` keeps the old image forever once one exists.
+- `--force-recreate`: config files mounted into containers (`nginx/templates/`,
+  `nginx/njs/`, `nginx/watch-cert.sh`) are only read at container start, and
+  compose doesn't recreate a container for them. Recreating everything means
+  every change is picked up, at the cost of every deploy dropping all tunnels
+  and browser access for a few seconds (VMs reconnect on their own; sessions
+  survive, they live in the cookie). sish keeps its SSH host key in the
+  `sish-keys` volume, so it doesn't change on redeploy.
 - `--remove-orphans`: removes services a release dropped, so they can't keep
   holding ports (e.g. nginx's :80/:443 when rolling back past 0.5.0).
-
-nginx reads `nginx/templates/` and `nginx/njs/` only when its container
-starts, and this command doesn't recreate it for those files. If `nginx/`
-differs between the tag you left and the one you deployed
-(`git diff --stat <old-tag> <new-tag> -- nginx/`), also run
-`docker compose restart nginx`. That includes rollbacks, except past 0.5.0,
-where there is no nginx.
 
 ## Upgrading to SSO (0.5.0) on an existing box
 
@@ -263,9 +262,24 @@ where there is no nginx.
    HTTPS origin) — otherwise logins through the CDN loop or fail.
 3. Add the four SSO values to `.env` (`docker compose up` refuses to start
    without them).
-4. Deploy `v0.5.0` (see Deploying). This recreates sish, so every tunnel in
-   the region drops for a few seconds; VMs reconnect on their own.
-5. Run the smoke tests above.
+4. Save sish's SSH host key from the running 0.4.x container (0.5.0 keeps it
+   in the `sish-keys` volume; before, it lived only inside the container):
+
+   ```bash
+   docker cp sish:/app/deploy/keys/ssh_key /tmp/sish-host-key
+   ```
+
+5. Deploy `v0.5.0` (see Deploying). Every tunnel in the region drops for a
+   few seconds; VMs reconnect on their own.
+6. Put the old host key back, so VMs don't see a changed key (OpenSSH
+   disables their tunnels on a mismatch with a saved `known_hosts` entry,
+   even with `StrictHostKeyChecking=no`):
+
+   ```bash
+   docker compose cp /tmp/sish-host-key sish:/keys/ssh_key && docker compose restart sish && rm /tmp/sish-host-key
+   ```
+
+7. Run the smoke tests above.
 
 Rollback: deploy the previous tag (see Deploying); `--remove-orphans` makes
 nginx release :80/:443 back to sish. Tunnel apps can see session cookies
