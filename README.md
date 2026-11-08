@@ -144,11 +144,20 @@ One-time Google setup (Google Cloud console → APIs & Services):
 3. Put the client ID/secret in each box's `.env`, with a per-box cookie
    secret (see [`.env.example`](./.env.example)).
 
-CloudFront must not cache, must forward `Host`, cookies, query strings and
-`Sec-Fetch-Mode` (and return `Set-Cookie`), and must fetch the origin over
-HTTPS — nginx redirects :80 to HTTPS. Without `Sec-Fetch-Mode`, background
-requests start logins too, which works but brings back csrf cookie pile-up. The OAuth callback itself hits the apex, which resolves
-straight to the box, not through CloudFront.
+CloudFront settings SSO depends on (the managed **CachingDisabled** cache
+policy plus **AllViewer** origin request policy covers all the forwarding):
+
+| Setting | If missing |
+|---|---|
+| No caching | Visitors could get other users' cached pages. |
+| Forward `Host` | Tunnels don't route (already broken without SSO). |
+| Forward query strings | Tunnel URLs lose their query (already broken without SSO). |
+| Forward cookies and return `Set-Cookie` | Nobody can log in through CloudFront: the sign-in cookie is dropped, so login fails with a 403 or keeps bouncing to Google. |
+| HTTPS to the origin | Every tunnel loops: nginx redirects HTTP to HTTPS, and CloudFront hands the redirect back to the browser. |
+| Forward `Sec-Fetch-Mode` | Still works, but background requests start logins too, so a polling tab can occasionally break a login in progress (retrying fixes it). |
+
+The OAuth callback itself hits the apex, which resolves straight to the box,
+not through CloudFront.
 
 To see why someone was denied: `docker compose logs oauth2-proxy | grep <email>`.
 nginx logs one line per request with the signed-in email.
