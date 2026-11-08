@@ -5,7 +5,7 @@ Cloud Development Environment (CDE) tunnels. sish exposes HTTP(S)/WS(S)/TCP
 tunnels to a developer's localhost over plain SSH remote port forwarding — no
 client agent required.
 
-Version: 0.4.2 <!-- x-release-please-version -->
+Version: 0.5.0 <!-- x-release-please-version -->
 
 ## What this is (and isn't)
 
@@ -198,7 +198,7 @@ nginx logs one line per request with the signed-in email.
    <!-- x-release-please-start-version -->
    ```bash
    git clone https://github.com/GlueOps/cde-sish-tunnels.git && cd cde-sish-tunnels
-   git checkout v0.4.2
+   git checkout v0.5.0
    ```
    <!-- x-release-please-end -->
 
@@ -245,7 +245,7 @@ follows its steps instead.
 
 <!-- x-release-please-start-version -->
 ```bash
-git fetch --tags && git checkout v0.4.2 && docker compose up -d --build --force-recreate --remove-orphans
+git fetch --tags && git checkout v0.5.0 && docker compose up -d --build --force-recreate --remove-orphans
 ```
 <!-- x-release-please-end -->
 

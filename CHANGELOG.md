@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.4.2...v0.5.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* browser access to every tunnel now requires Google SSO, and `.env` must set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SSO_EMAIL_DOMAIN` and `OAUTH2_PROXY_COOKIE_SECRET` (compose refuses to start without them). nginx now owns :80/:443 and accepts TLS 1.3 only, so clients without TLS 1.3 can't connect. sish v4.0.0 changes its server log format.
+
+### Features
+
+* require Google SSO for browser access to tunnels ([#55](https://github.com/GlueOps/cde-sish-tunnels/issues/55)) ([f9bf785](https://github.com/GlueOps/cde-sish-tunnels/commit/f9bf78512480f553ca39af51498c2355d4deea25))
+
 ## [0.4.2](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.4.1...v0.4.2) (2026-08-03)
 
 
