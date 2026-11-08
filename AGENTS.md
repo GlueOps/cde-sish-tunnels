@@ -1,0 +1,59 @@
+# AGENTS.md
+
+Docker Compose deployment of upstream [sish](https://github.com/antoniomika/sish)
+for GlueOps CDE tunnels: one box per region, SSH tunnel creation on :2222,
+browser access through a Google SSO edge. Deployment only — no fork of sish.
+See [README.md](./README.md) for the full picture.
+
+## Repo map
+
+- `docker-compose.yml` — the whole stack: letsencrypt, nginx, oauth2-proxy, sish, authenticator.
+- `nginx/templates/default.conf.template` — TLS edge + `auth_request` to oauth2-proxy; `${DOMAIN}` is the only substituted variable.
+- `nginx/njs/cookies.js` — strips oauth2-proxy cookies before requests reach sish.
+- `nginx/watch-cert.sh` — reloads nginx when the cert changes.
+- `auth/` — Flask TOFU SSH-key authenticator (sish's key-check webhook).
+- `deploy-hook.sh` — certbot hook copying certs into `./ssl`.
+- `MIGRATION.md` — one-time steps between specific versions.
+- `test/` — end-to-end SSO test (`run.sh`, compose override, checks in `test_sso.py`).
+- `.env.example` — every deploy-time setting, with comments.
+
+## Build and test
+
+```bash
+./test/run.sh   # Docker only; same command CI runs (.github/workflows/test.yaml)
+```
+
+Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
+
+## Rules
+
+- Pin every image by tag **and** digest; don't use unpinned images.
+- Never publish sish's 80/443 or oauth2-proxy's 4180. Only nginx faces browsers.
+- Published ports are IPv4-only (`0.0.0.0:`), see the comment on sish's ports.
+- Never mount client SSH keys into sish (see `/empty-pubkeys` comment); never drop the `sish-keys` volume (sish's host key).
+- Routine deploy commands in docs are always `docker compose up -d --build --force-recreate --remove-orphans` (README "Deploying" explains each flag). MIGRATION.md's host-key steps use `up --no-start`, `cp`, `start` on purpose: copying after sish starts races its key generation.
+- One-time upgrade steps go in `MIGRATION.md` under a section naming the versions they apply to; the README stays about new boxes and routine deploys.
+- Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. MIGRATION.md's "0.4.x → 0.5.0") stays hardcoded.
+- New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
+- TLS protocol/session settings live at http level in the nginx template so every server inherits them. Don't set `ssl_ecdh_curve` (the default prefers post-quantum X25519MLKEM768).
+- Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
+- Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
+
+## Decisions
+
+Settled; don't re-raise in reviews.
+
+- **nginx + oauth2-proxy** for SSO (not Pomerium/Traefik/Caddy, not oauth2-proxy as the edge — it only keeps a relative return path, which breaks the shared callback).
+- **Hard 12h sessions, no `cookie-refresh`.** Refresh slides the expiry forward (it resets the session's creation time), which defeats the cap. Offboarded users keep an existing session up to 12h; the kill switch is rotating `OAUTH2_PROXY_COOKIE_SECRET`.
+- **Account picker + consent on every login** (`prompt=select_account consent`).
+- **Browser only, no bypass** for webhooks/API clients/public tunnels.
+- **Domain-only authorization:** any company account can open any tunnel; no per-owner check.
+- **Callback on the apex** `https://${DOMAIN}/oauth2/callback` (no tunnel can bind it; resolves straight to the box).
+- **`.env` for secrets**, matching the existing AWS keys, not `*_FILE` secrets.
+- **No `--trusted-proxy-ip` / split networks:** oauth2-proxy is unpublished and the trusted headers only affect its logs.
+- **Only page loads start a login** (`Sec-Fetch-Mode: navigate`, or none, e.g. `curl`, which gets a 302 to Google); signed-out fetch/XHR/websocket/subresource requests get a plain 401, so background traffic can't pile up or evict csrf cookies.
+- **Accepted:** websockets are checked only at upgrade; a tunnel app can set cookies on `.${DOMAIN}` (could log other users out); `/oauth2/*` is reserved on every tunnel host.
+- **CI test runs on every PR but isn't a required check.**
+- **TLS 1.3 hardcoded**, not an `.env` setting; falling back means a release (or an edit plus `docker compose restart nginx`).
+- **Every deploy recreates every container** (`--force-recreate`), dropping all tunnels for a few seconds; accepted over building nginx into its own image.
+- **VMs connect without strict host key checking.** OpenSSH still disables forwarding when a saved `known_hosts` entry mismatches, so MIGRATION.md carries the host key over on upgrade and rollback.

@@ -1,0 +1,21 @@
+name: test
+
+# End-to-end SSO test (test/run.sh): the production compose stack with a mock
+# IdP in place of Google. Same command as locally.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  sso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./test/run.sh

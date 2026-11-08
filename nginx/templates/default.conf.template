@@ -1,0 +1,154 @@
+# Rendered by the nginx image's envsubst (only ${DOMAIN} is substituted).
+
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# TLS 1.3 only (Mozilla "modern"), at http level so every server inherits it.
+ssl_protocols TLSv1.3;
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 1d;
+ssl_session_tickets off;
+
+# `resolve` re-resolves container IPs, so recreating sish or oauth2-proxy
+# doesn't leave nginx proxying to a stale address.
+upstream oauth2_proxy {
+    zone oauth2_proxy 64k;
+    server oauth2-proxy:4180 resolve;
+    keepalive 16;
+}
+
+upstream sish {
+    zone sish 64k;
+    server sish:80 resolve;
+    keepalive 32;
+}
+
+# Empty Connection header (not "close") lets non-upgrade requests reuse
+# upstream keepalive connections.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+
+# Absolute return URL for oauth2-proxy, which otherwise only sees the path
+# (the shared callback host is not the tunnel host). Blank for /oauth2/*
+# itself, or a direct /oauth2/sign_out would redirect to itself.
+map $request_uri $o2p_rd {
+    ~^/oauth2/ "";
+    default    $scheme://$host$request_uri;
+}
+
+# Strip oauth2-proxy cookies so tunnel apps never see visitors' sessions.
+js_import cookies from /etc/nginx/njs/cookies.js;
+js_set $cookie_clean cookies.clean;
+
+# Only page loads start a login (and set a csrf cookie). Background fetches,
+# websockets and subresources get a plain 401, so polling tabs can't pile up
+# csrf cookies or evict the one for a login in progress. No Sec-Fetch-Mode
+# (curl, old browsers) counts as a page load.
+map $http_sec_fetch_mode $o2p_start_login {
+    ""       1;
+    navigate 1;
+    default  0;
+}
+
+# Hosts that must never reach a tunnel: the apex hosts the SSO callback and
+# origin.* is CloudFront's origin name — a developer could bind either name
+# in sish.
+map $host $reserved_host {
+    ${DOMAIN}        1;
+    origin.${DOMAIN} 1;
+    default          0;
+}
+
+# cf: CloudFront's request ID (X-Amz-Cf-Id), "-" for direct requests.
+log_format sso '$remote_addr $host "$request" $status $upstream_status '
+               '$request_time "$auth_email" xff="$http_x_forwarded_for" '
+               'tls=$ssl_protocol curve=$ssl_curve cf="$http_x_amz_cf_id"';
+
+server {
+    listen 80 default_server;
+    access_log /dev/stdout sso;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    ssl_certificate     /ssl/${DOMAIN}.crt;
+    ssl_certificate_key /ssl/${DOMAIN}.key;
+    access_log /dev/stdout sso;
+
+    client_max_body_size 0;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    location /oauth2/ {
+        proxy_pass http://oauth2_proxy;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Auth-Request-Redirect $o2p_rd;
+    }
+
+    location = /oauth2/auth {
+        internal;
+        proxy_pass http://oauth2_proxy;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Content-Length "";
+        proxy_pass_request_body off;
+        # Fail fast (500, closed) if oauth2-proxy hangs, instead of 60s stalls.
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+    }
+
+    location / {
+        if ($reserved_host) {
+            return 404;
+        }
+
+        auth_request /oauth2/auth;
+        error_page 401 = @unauthenticated;
+        auth_request_set $auth_user  $upstream_http_x_auth_request_user;
+        auth_request_set $auth_email $upstream_http_x_auth_request_email;
+
+        proxy_pass http://sish;
+        proxy_set_header Host $host;
+        proxy_set_header Cookie $cookie_clean;
+        # Identity comes only from oauth2-proxy; blank anything a client
+        # sent under the header names apps commonly trust.
+        proxy_set_header X-Forwarded-User  $auth_user;
+        proxy_set_header X-Forwarded-Email $auth_email;
+        proxy_set_header X-Forwarded-Groups "";
+        proxy_set_header X-Forwarded-Preferred-Username "";
+        proxy_set_header X-Forwarded-Access-Token "";
+        proxy_set_header X-Auth-Request-User "";
+        proxy_set_header X-Auth-Request-Email "";
+        proxy_set_header X-Auth-Request-Groups "";
+        proxy_set_header X-Auth-Request-Preferred-Username "";
+        proxy_set_header X-Auth-Request-Access-Token "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location @unauthenticated {
+        if ($o2p_start_login = 0) {
+            return 401;
+        }
+        rewrite ^ /oauth2/sign_in? last;
+    }
+}

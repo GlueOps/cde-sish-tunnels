@@ -1,9 +1,16 @@
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # DNS01 Let's Encrypt Certificate Manager (Route53 + Certbot)
   letsencrypt:
-    image: certbot/dns-route53:v5.6.0@sha256:e0bb5afcd4bc51edc2879c327f29d80a318bc10efae2e5a0c323e5c8faf334d8
+    image: certbot/dns-route53:v5.9.0@sha256:2ba9a556fab15b5d3226a8c081108f8e27bed02794f4e54257fc8358cc053c1d
     container_name: letsencrypt-dns
     restart: always
+    logging: *logging
     environment:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
@@ -11,6 +18,12 @@ services:
       - letsencrypt:/etc/letsencrypt
       - ./deploy-hook.sh:/deploy-hook.sh:ro
       - ./ssl:/ssl
+    # Healthy once the cert exists, so nginx (which can't start without it)
+    # waits out first-boot issuance instead of crash-looping.
+    healthcheck:
+      test: ["CMD", "test", "-s", "/ssl/${DOMAIN}.crt"]
+      interval: 5s
+      start_period: 10m
     entrypoint: /bin/sh
     command:
       - -c
@@ -29,11 +42,71 @@ services:
           certbot renew --deploy-hook /deploy-hook.sh
         done
 
+  # TLS edge for browsers: every HTTP(S) request must pass oauth2-proxy
+  # (auth_request) before it reaches sish.
+  nginx:
+    image: nginx:1.30.6-alpine@sha256:583b7f2fce1cdb8da5ad5c39ebd3c33b98b87d493190e548bdee1fa8c619c311
+    restart: always
+    logging: *logging
+    # IPv4-only for the same docker-proxy source-rewrite reason as :2222.
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - NGINX_ENVSUBST_FILTER=^DOMAIN$$
+    volumes:
+      - ./ssl:/ssl:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/njs:/etc/nginx/njs:ro
+      - ./nginx/watch-cert.sh:/watch-cert.sh:ro
+    command: ["sh", "-c", "sh /watch-cert.sh & exec /docker-entrypoint.sh nginx -g 'load_module modules/ngx_http_js_module.so; daemon off;'"]
+    depends_on:
+      letsencrypt:
+        condition: service_healthy
+      oauth2-proxy:
+        condition: service_started
+      sish:
+        condition: service_started
+
+  # Google SSO check for nginx's auth_request; never published.
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048
+    restart: always
+    logging: *logging
+    environment:
+      - OAUTH2_PROXY_PROVIDER=google
+      - OAUTH2_PROXY_CLIENT_ID=${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}
+      - OAUTH2_PROXY_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}
+      - OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET:?set OAUTH2_PROXY_COOKIE_SECRET in .env}
+      - OAUTH2_PROXY_EMAIL_DOMAINS=${SSO_EMAIL_DOMAIN:?set SSO_EMAIL_DOMAIN in .env}
+      # One callback per region on the apex, which no tunnel can bind.
+      - OAUTH2_PROXY_REDIRECT_URL=https://${DOMAIN}/oauth2/callback
+      - OAUTH2_PROXY_COOKIE_DOMAINS=.${DOMAIN}
+      - OAUTH2_PROXY_WHITELIST_DOMAINS=.${DOMAIN}
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_UPSTREAMS=static://202
+      - OAUTH2_PROXY_REVERSE_PROXY=true
+      - OAUTH2_PROXY_SET_XAUTHREQUEST=true
+      - OAUTH2_PROXY_SKIP_PROVIDER_BUTTON=true
+      - OAUTH2_PROXY_CODE_CHALLENGE_METHOD=S256
+      # Hard 12h session, no refresh: refresh would slide the expiry forward.
+      - OAUTH2_PROXY_COOKIE_EXPIRE=12h
+      - OAUTH2_PROXY_SESSION_COOKIE_MINIMAL=true
+      - OAUTH2_PROXY_PROMPT=select_account consent
+      - OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST=true
+      # Default is unlimited; caps the Cookie header (nginx only lets page
+      # loads start a login, so background polling doesn't count).
+      - OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST_LIMIT=10
+      # nginx already logs every request; keep only auth events here.
+      - OAUTH2_PROXY_REQUEST_LOGGING=false
+
   # The SSH Server (upstream image, pinned by digest)
   sish:
-    image: ghcr.io/antoniomika/sish:v2.23.0@sha256:c03329d1b8182ac8a928c1b928174dc2621619b824d0dcb11f045d02761bb327
+    image: ghcr.io/antoniomika/sish:v4.0.0@sha256:475a4943def8fdb3f28b5c58fa26ba74009266981e049cd125fdac9916cd8f44
     container_name: sish
     restart: always
+    logging: *logging
     ports:
       # :2222 is IPv4-only ON PURPOSE: an unqualified publish also binds
       # [::], and IPv6 connections reach the IPv4-only compose network via
@@ -41,17 +114,22 @@ services:
       # (172.x) — laundering external clients INSIDE the private-range
       # tunnel allowlist. Tunnel DNS is A-record-only, so nothing
       # legitimate connects over v6.
+      # 80/443 are NOT published: browsers must go through nginx's SSO.
       - "0.0.0.0:2222:2222"
-      - "80:80"
-      - "443:443"
     volumes:
-      - ./ssl:/ssl
+      # sish only reads the cert; a compromised sish mustn't replace what nginx serves.
+      - ./ssl:/ssl:ro
+      # SSH host key, generated on first start; kept so recreating sish (every
+      # deploy) doesn't change it.
+      - sish-keys:/keys
     # /empty-pubkeys: sish accepts any key found in its authentication-keys
     # directory WITHOUT consulting the auth webhook. The image's default dir
     # ships (effectively) empty, but pointing the flag at a tmpfs makes the
-    # bypass impossible by construction — never mount keys into this stack.
+    # bypass impossible by construction — never mount client keys into this stack
+    # (sish's own host key in sish-keys above is a different thing).
     tmpfs:
       - /empty-pubkeys
+    # --https stays on only so sish prints https:// URLs to developers.
     command: >
       --domain ${DOMAIN}
       --http-address :80
@@ -60,6 +138,7 @@ services:
       --https-certificate-directory=/ssl
       --authentication=true
       --authentication-keys-directory=/empty-pubkeys
+      --private-keys-directory=/keys
       --https=true
       --bind-random-subdomains=false
       --authentication-key-request-url="http://authenticator:5000/"
@@ -77,6 +156,7 @@ services:
     build: ./auth
     container_name: sish-auth
     restart: always
+    logging: *logging
     environment:
       # Source-IP allowlist for TUNNEL CREATION only (SSH auth): sish passes
       # each SSH client's address here, and connections outside these CIDRs
@@ -92,3 +172,4 @@ services:
 
 volumes:
   letsencrypt:
+  sish-keys:
