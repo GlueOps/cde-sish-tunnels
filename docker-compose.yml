@@ -103,7 +103,7 @@ services:
 
   # The SSH Server (upstream image, pinned by digest)
   sish:
-    image: ghcr.io/antoniomika/sish:v4.0.0@sha256:475a4943def8fdb3f28b5c58fa26ba74009266981e049cd125fdac9916cd8f44
+    image: ghcr.io/antoniomika/sish:v4.1.1@sha256:5936a5487d1825f425877857734c4160b47f5f2c03c15717161c27ba89c4483a
     container_name: sish
     restart: always
     logging: *logging
