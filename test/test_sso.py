@@ -105,6 +105,8 @@ def main():
           r.status_code == 200 and r.url == APP + "?tkn=abc123" and "GET /?tkn=abc123" in r.text,
           f"{r.status_code} {r.url}")
     check("app receives X-Forwarded-Email", "X-Forwarded-Email: alice@example.com" in r.text)
+    check("app sees the public scheme and port (VS Code builds its websocket URL from them)",
+          "X-Forwarded-Proto: https" in r.text and "X-Forwarded-Port: 443" in r.text)
 
     session_cookie = next((c for c in s.cookies if c.name == "_oauth2_proxy"), None)
     left = (session_cookie.expires or 0) - time.time() if session_cookie else 0

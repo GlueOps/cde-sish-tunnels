@@ -50,6 +50,7 @@ Settled; don't re-raise in reviews.
 - **Domain-only authorization:** any company account can open any tunnel; no per-owner check.
 - **Callback on the apex** `https://${DOMAIN}/oauth2/callback` (no tunnel can bind it; resolves straight to the box).
 - **`.env` for secrets**, matching the existing AWS keys, not `*_FILE` secrets.
+- **sish trusts all private ranges** (`--http-trusted-proxies`), not a pinned compose subnet: sish's :80 is unpublished, so only this stack's containers can reach it, the same trust as before sish v4.1.0.
 - **No `--trusted-proxy-ip` / split networks:** oauth2-proxy is unpublished and the trusted headers only affect its logs.
 - **Only page loads start a login** (`Sec-Fetch-Mode: navigate`, or none, e.g. `curl`, which gets a 302 to Google); signed-out fetch/XHR/websocket/subresource requests get a plain 401, so background traffic can't pile up or evict csrf cookies.
 - **Accepted:** websockets are checked only at upgrade; a tunnel app can set cookies on `.${DOMAIN}` (could log other users out); `/oauth2/*` is reserved on every tunnel host.
