@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.1](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.6.0...v0.6.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* trust nginx's forwarded headers in sish so VS Code websockets connect ([#63](https://github.com/GlueOps/cde-sish-tunnels/issues/63)) ([67b15f5](https://github.com/GlueOps/cde-sish-tunnels/commit/67b15f50e95fa3b86f945ec9e976ed308db6441a))
+
+
+### Dependencies
+
+* update python:3.15-alpine docker digest to 0f9552b ([#58](https://github.com/GlueOps/cde-sish-tunnels/issues/58)) ([6a66664](https://github.com/GlueOps/cde-sish-tunnels/commit/6a66664faaf620384a10876df65b906fd5bb5ab3))
+
 ## [0.6.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.5.0...v0.6.0) (2026-11-19)
 
 
