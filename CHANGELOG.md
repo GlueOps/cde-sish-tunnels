@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.5.0...v0.6.0) (2026-11-19)
+
+
+### Features
+
+* **deps:** update ghcr.io/antoniomika/sish docker tag to v4.1.1 ([#60](https://github.com/GlueOps/cde-sish-tunnels/issues/60)) ([d1b66d0](https://github.com/GlueOps/cde-sish-tunnels/commit/d1b66d01cf9100b192ded9f55dfd193fe581c3b8))
+
+
+### Dependencies
+
+* update nginx docker tag to v1.30.7 ([#61](https://github.com/GlueOps/cde-sish-tunnels/issues/61)) ([4933d51](https://github.com/GlueOps/cde-sish-tunnels/commit/4933d51091769f10864e35c0a4628a763a608912))
+
 ## [0.5.0](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.4.2...v0.5.0) (2026-11-08)
 
 
