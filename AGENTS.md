@@ -36,6 +36,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. MIGRATION.md's "0.4.x → 0.5.0") stays hardcoded.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
 - TLS protocol/session settings live at http level in the nginx template so every server inherits them. Don't set `ssl_ecdh_curve` (the default prefers post-quantum X25519MLKEM768).
+- Keep sish's `--idle-connection-timeout` well above a few seconds (60s): sish closes any connection quiet that long, mid-response included, and browsers show the truncation as `ERR_HTTP2_PROTOCOL_ERROR` / `ERR_QUIC_PROTOCOL_ERROR` on a 200.
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
 
