@@ -167,6 +167,17 @@ def main():
     ws = session().get(APP, headers=WS, stream=True, allow_redirects=False)
     check("websocket upgrade refused when anonymous", ws.status_code != 101, str(ws.status_code))
 
+    try:
+        r = s.get(f"https://stall.{D}/stall")
+        ok, detail = r.status_code == 200 and len(r.content) == 2_000_000, f"{r.status_code} {len(r.content)} bytes"
+    except requests.exceptions.ChunkedEncodingError as e:
+        ok, detail = False, f"truncated: {e}"
+    check("response survives an 8s pause from the tunnel app", ok, detail)
+    r = s.get(f"https://stall.{D}/app.js", headers={"Via": "1.1 abc.cloudfront.net (CloudFront)"})
+    check("scripts gzipped for requests through CloudFront",
+          r.headers.get("Content-Encoding") == "gzip" and r.content.startswith(b"console.log"),
+          r.headers.get("Content-Encoding", "not compressed"))
+
     r = s.get(f"https://nope.{D}/", allow_redirects=False)
     check("one login covers other tunnel hosts", "idp" not in r.headers.get("Location", "") and ECHO not in r.text,
           str(r.status_code))

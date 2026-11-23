@@ -1,5 +1,13 @@
 # Rendered by the nginx image's envsubst (only ${DOMAIN} is substituted).
 
+# Compress text assets: the VS Code server sends them raw (workbench.js is ~21 MB).
+# gzip_proxied any: CloudFront adds a Via header, which the default (off) treats as "don't compress".
+gzip on;
+gzip_proxied any;
+gzip_vary on;
+gzip_comp_level 5;
+gzip_types text/css text/plain text/xml application/javascript text/javascript application/json application/manifest+json image/svg+xml;
+
 resolver 127.0.0.11 valid=10s ipv6=off;
 
 # TLS 1.3 only (Mozilla "modern"), at http level so every server inherits it.

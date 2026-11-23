@@ -286,8 +286,9 @@ Runs the production compose stack layered with
 for Google, a self-signed cert for certbot, and nothing is published or
 written to `./ssl` / `./sish_users`. It checks login, denial, cookie
 stripping, header spoofing, websockets, redirects, reserved hosts, `ssh -L`
-bypass, the Google login URL, TLS 1.3 only, HSTS, the SSH host key surviving
-a recreate, and cert reload. CI runs the same script on
+bypass, the Google login URL, TLS 1.3 only, HSTS, a response surviving an 8s
+pause from the tunnel app, gzip for requests through CloudFront (its `Via`
+header), the SSH host key surviving a recreate, and cert reload. CI runs the same script on
 every PR. Not covered: a real Google login and CloudFront.
 
 ## Upgrading sish

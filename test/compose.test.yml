@@ -30,6 +30,7 @@ services:
           - origin.${DOMAIN}
           - app1.${DOMAIN}
           - nope.${DOMAIN}
+          - stall.${DOMAIN}
 
   oauth2-proxy:
     environment:
@@ -63,8 +64,13 @@ services:
   echo:
     image: jmalloc/echo-server:v0.3.7@sha256:c87f80de8dbb976a59b228fc9ecf257e0574c6f760c2f1c5f05f64c7ac7fbc1e
 
-  # A "VM" holding two tunnels to the echo app: app1 (normal) and origin
-  # (a reserved name nginx must never route to a tunnel).
+  stall:
+    build: test
+    init: true
+    command: ["python", "-I", "/stall_app.py"]
+
+  # A "VM" holding three tunnels: app1 (normal) and origin (a reserved name
+  # nginx must never route to a tunnel) to the echo app, stall to the stall app.
   tunnel:
     build: test
     restart: always
@@ -75,8 +81,8 @@ services:
         [ -f /tmp/id ] || ssh-keygen -q -t ed25519 -N '' -f /tmp/id
         exec ssh -N -i /tmp/id -p 2222 -o StrictHostKeyChecking=no \
           -o ServerAliveInterval=10 -o ExitOnForwardFailure=yes \
-          -R app1:80:echo:8080 -R origin:80:echo:8080 vm1@sish
-    depends_on: [sish, echo]
+          -R app1:80:echo:8080 -R origin:80:echo:8080 -R stall:80:stall:8000 vm1@sish
+    depends_on: [sish, echo, stall]
 
   tester:
     build: test

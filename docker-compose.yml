@@ -132,6 +132,11 @@ services:
     # --https stays on only so sish prints https:// URLs to developers.
     # --http-trusted-proxies: since v4.1.0 sish drops X-Forwarded-*/X-Real-IP from
     # unlisted peers and writes its own (http, :80), so VS Code opens wss://<host>:80.
+    # --idle-connection-timeout: the 5s default closes a connection mid-response
+    # whenever the tunnel app or a slow browser pauses that long (nginx doesn't
+    # buffer), so big downloads like VS Code's ~21 MB workbench.js end as a
+    # truncated 200 (ERR_HTTP2_PROTOCOL_ERROR / ERR_QUIC_PROTOCOL_ERROR).
+    # 60s matches CloudFront's origin_read_timeout; raise both together.
     command: >
       --domain ${DOMAIN}
       --http-address :80
@@ -148,6 +153,7 @@ services:
       --cleanup-unauthed-timeout=30s
       --force-requested-subdomains
       --cleanup-unbound
+      --idle-connection-timeout=60s
       --http-trusted-proxies=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 #      --debug
     depends_on:

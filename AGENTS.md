@@ -14,7 +14,7 @@ See [README.md](./README.md) for the full picture.
 - `auth/` — Flask TOFU SSH-key authenticator (sish's key-check webhook).
 - `deploy-hook.sh` — certbot hook copying certs into `./ssl`.
 - `MIGRATION.md` — one-time steps between specific versions.
-- `test/` — end-to-end SSO test (`run.sh`, compose override, checks in `test_sso.py`).
+- `test/` — end-to-end SSO test (`run.sh`, compose override, checks in `test_sso.py`, tunnel app `stall_app.py`).
 - `.env.example` — every deploy-time setting, with comments.
 
 ## Build and test
@@ -36,6 +36,8 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - Docs that name the current release sit inside `<!-- x-release-please-start-version -->` … `<!-- x-release-please-end -->` so release PRs bump them (not a trailing `# x-release-please-version`: plain zsh passes it as arguments). Text about a specific past release (e.g. MIGRATION.md's "0.4.x → 0.5.0") stays hardcoded.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
 - TLS protocol/session settings live at http level in the nginx template so every server inherits them. Don't set `ssl_ecdh_curve` (the default prefers post-quantum X25519MLKEM768).
+- Keep sish's `--idle-connection-timeout` at 60s, see the comment on sish's command.
+- Keep `gzip_proxied any`, see the gzip comment in the nginx template.
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
 
