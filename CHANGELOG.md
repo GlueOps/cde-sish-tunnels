@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.2](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.6.1...v0.6.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **sish:** stop truncating large tunneled responses; gzip text assets ([#66](https://github.com/GlueOps/cde-sish-tunnels/issues/66)) ([964e8a9](https://github.com/GlueOps/cde-sish-tunnels/commit/964e8a96f6a23abc045d3e33c05466b2e0f6404b))
+
+
+### Dependencies
+
+* update nginx:1.30.7-alpine docker digest to caf4e1e ([#65](https://github.com/GlueOps/cde-sish-tunnels/issues/65)) ([f4047ea](https://github.com/GlueOps/cde-sish-tunnels/commit/f4047ea6f82f0d4fafd6e7c464e6855eb8a1fee5))
+
 ## [0.6.1](https://github.com/GlueOps/cde-sish-tunnels/compare/v0.6.0...v0.6.1) (2026-11-19)
 
 
