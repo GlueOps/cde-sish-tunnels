@@ -66,6 +66,7 @@ services:
 
   stall:
     build: test
+    init: true
     command: ["python", "-I", "/stall_app.py"]
 
   # A "VM" holding three tunnels: app1 (normal) and origin (a reserved name

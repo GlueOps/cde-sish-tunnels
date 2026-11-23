@@ -17,7 +17,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         half = len(body) // 2
         self.wfile.write(body[:half])
-        self.wfile.flush()
         if self.path == "/stall":
             time.sleep(8)
         self.wfile.write(body[half:])
