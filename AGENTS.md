@@ -37,6 +37,7 @@ Run it after any change to `docker-compose.yml`, `nginx/` or `auth/`.
 - New required settings use `${VAR:?message}` so a box with an old `.env` fails at startup.
 - TLS protocol/session settings live at http level in the nginx template so every server inherits them. Don't set `ssl_ecdh_curve` (the default prefers post-quantum X25519MLKEM768).
 - Keep sish's `--idle-connection-timeout` well above a few seconds (60s): sish closes any connection quiet that long, mid-response included, and browsers show the truncation as `ERR_HTTP2_PROTOCOL_ERROR` / `ERR_QUIC_PROTOCOL_ERROR` on a 200.
+- Keep `gzip_proxied any` in the nginx template: CloudFront sends `Via`, and nginx's default doesn't compress proxied requests.
 - Tunnel apps must never receive `_oauth2_proxy*` cookies: `nginx/njs/cookies.js` strips them (any count; regex map passes can be exhausted by parallel sign-ins).
 - Conventional Commits, release-please friendly (`feat!:` for breaking deploy changes).
 

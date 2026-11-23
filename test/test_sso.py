@@ -173,6 +173,10 @@ def main():
     except requests.exceptions.ChunkedEncodingError as e:
         ok, detail = False, f"truncated: {e}"
     check("response survives an 8s pause from the tunnel app", ok, detail)
+    r = s.get(f"https://stall.{D}/app.js", headers={"Via": "1.1 abc.cloudfront.net (CloudFront)"})
+    check("scripts gzipped for requests through CloudFront",
+          r.headers.get("Content-Encoding") == "gzip" and r.content.startswith(b"console.log"),
+          r.headers.get("Content-Encoding", "not compressed"))
 
     r = s.get(f"https://nope.{D}/", allow_redirects=False)
     check("one login covers other tunnel hosts", "idp" not in r.headers.get("Location", "") and ECHO not in r.text,
