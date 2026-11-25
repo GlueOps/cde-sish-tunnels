@@ -45,7 +45,7 @@ services:
   # TLS edge for browsers: every HTTP(S) request must pass oauth2-proxy
   # (auth_request) before it reaches sish.
   nginx:
-    image: nginx:1.30.7-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
+    image: nginx:1.30.8-alpine@sha256:8eb04fe3b385090e9aa02961f77398ad09b6bf33ab07f6669a5bb7acce22c0d3
     restart: always
     logging: *logging
     # IPv4-only for the same docker-proxy source-rewrite reason as :2222.
